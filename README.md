@@ -103,3 +103,4 @@ For local runs, values from `.env` are loaded automatically. Docker Compose also
 
 Polling intervals are per inverter and per task, so remote/VPN-backed sources can be queried less
 often than LAN sources.
+
