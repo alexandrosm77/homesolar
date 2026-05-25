@@ -27,7 +27,7 @@ jobs:
       test_image: ${{ steps.names.outputs.test_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare SSH
         uses: ./.github/actions/setup-pi-ssh
@@ -75,7 +75,7 @@ jobs:
       PI_PORT: ${{ vars.PI_PORT || '22' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare SSH
         uses: ./.github/actions/setup-pi-ssh
@@ -111,7 +111,7 @@ jobs:
       HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8080' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare SSH
         uses: ./.github/actions/setup-pi-ssh
@@ -197,7 +197,7 @@ jobs:
       PI_PORT: ${{ vars.PI_PORT || '22' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare SSH
         uses: ./.github/actions/setup-pi-ssh
