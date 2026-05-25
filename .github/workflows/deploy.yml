@@ -9,55 +9,190 @@ concurrency:
   group: homesolar-deploy
   cancel-in-progress: false
 
+env:
+  APP_NAME: homesolar
+  PI_USER: ${{ vars.PI_USER }}
+  PI_HOST: ${{ vars.PI_HOST }}
+  PI_PORT: ${{ vars.PI_PORT || '22' }}
+  PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
+  PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/opt/homesolar/config/local.yaml' }}
+  PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/opt/homesolar/data' }}
+  HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8000' }}
+
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  build:
+    name: Build images on Raspberry Pi
+    runs-on: [self-hosted]
+    outputs:
+      production_image: ${{ steps.names.outputs.production_image }}
+      test_image: ${{ steps.names.outputs.test_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Prepare SSH
+        uses: ./.github/actions/setup-pi-ssh
         with:
-          python-version: "3.12"
+          private-key: ${{ secrets.PI_SSH_KEY }}
+          host: ${{ env.PI_HOST }}
+          port: ${{ env.PI_PORT }}
+          user: ${{ env.PI_USER }}
 
-      - name: Install package
+      - name: Set image names
+        id: names
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          echo "production_image=${APP_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "test_image=${APP_NAME}:test-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests
-        run: python -m pytest
+      - name: Check out commit and build images on Pi
+        env:
+          PRODUCTION_IMAGE: ${{ steps.names.outputs.production_image }}
+          TEST_IMAGE: ${{ steps.names.outputs.test_image }}
+        run: |
+          ssh homesolar-pi \
+            "APP_DIR='$PI_APP_DIR' REPO='${{ github.repository }}' SHA='$GITHUB_SHA' PRODUCTION_IMAGE='$PRODUCTION_IMAGE' TEST_IMAGE='$TEST_IMAGE' bash -s" <<'REMOTE'
+          set -euo pipefail
+          if [ ! -d "$APP_DIR/.git" ]; then
+            mkdir -p "$(dirname "$APP_DIR")"
+            git clone "git@github.com:$REPO.git" "$APP_DIR"
+          fi
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard "$SHA"
+          docker build --target test -t "$TEST_IMAGE" .
+          docker build --target production -t "$PRODUCTION_IMAGE" .
+          REMOTE
 
-      - name: Run lint
-        run: python -m ruff check .
+  test:
+    name: Test image on Raspberry Pi
+    needs: build
+    runs-on: [self-hosted]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        uses: ./.github/actions/setup-pi-ssh
+        with:
+          private-key: ${{ secrets.PI_SSH_KEY }}
+          host: ${{ env.PI_HOST }}
+          port: ${{ env.PI_PORT }}
+          user: ${{ env.PI_USER }}
+
+      - name: Run tests and lint in test image
+        env:
+          TEST_IMAGE: ${{ needs.build.outputs.test_image }}
+        run: |
+          ssh homesolar-pi \
+            "TEST_IMAGE='$TEST_IMAGE' bash -s" <<'REMOTE'
+          set -euo pipefail
+          docker run --rm "$TEST_IMAGE" python -m pytest
+          docker run --rm "$TEST_IMAGE" python -m ruff check .
+          REMOTE
 
   deploy:
-    name: Deploy on Raspberry Pi
-    needs: test
-    runs-on: [self-hosted, homesolar-pi]
+    name: Migrate and deploy on Raspberry Pi
+    needs: [build, test]
+    runs-on: [self-hosted]
     environment: production
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Verify persistent config exists
-        env:
-          HOMESOLAR_CONFIG: /opt/homesolar/config/local.yaml
-          HOMESOLAR_DATA_DIR: /opt/homesolar/data
-        run: |
-          test -f "$HOMESOLAR_CONFIG"
-          mkdir -p "$HOMESOLAR_DATA_DIR"
+      - name: Prepare SSH
+        uses: ./.github/actions/setup-pi-ssh
+        with:
+          private-key: ${{ secrets.PI_SSH_KEY }}
+          host: ${{ env.PI_HOST }}
+          port: ${{ env.PI_PORT }}
+          user: ${{ env.PI_USER }}
 
-      - name: Build and restart homesolar
+      - name: Stop current app, migrate, and deploy
         env:
-          HOMESOLAR_CONFIG: /opt/homesolar/config/local.yaml
-          HOMESOLAR_DATA_DIR: /opt/homesolar/data
-          HOMESOLAR_PORT: "8000"
+          PRODUCTION_IMAGE: ${{ needs.build.outputs.production_image }}
           REMOTE_INVERTER_USER: ${{ secrets.REMOTE_INVERTER_USER }}
           REMOTE_INVERTER_PASSWORD: ${{ secrets.REMOTE_INVERTER_PASSWORD }}
-        run: docker compose up --build -d
+        run: |
+          runtime_env="$(mktemp)"
+          write_env() {
+            key="$1"
+            value="${2:-}"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::$key contains a newline, which is not supported in deploy env files"
+                exit 1
+                ;;
+            esac
+            printf '%s=%s\n' "$key" "$value"
+          }
+          {
+            write_env HOMESOLAR_IMAGE "$PRODUCTION_IMAGE"
+            write_env HOMESOLAR_CONFIG "$PI_CONFIG_PATH"
+            write_env HOMESOLAR_DATA_DIR "$PI_DATA_DIR"
+            write_env HOMESOLAR_PORT "$HOMESOLAR_PORT"
+            write_env REMOTE_INVERTER_USER "$REMOTE_INVERTER_USER"
+            write_env REMOTE_INVERTER_PASSWORD "$REMOTE_INVERTER_PASSWORD"
+          } > "$runtime_env"
+          ssh homesolar-pi "mkdir -p '$PI_APP_DIR/.deploy'"
+          scp "$runtime_env" "homesolar-pi:$PI_APP_DIR/.deploy/runtime.env"
+          rm -f "$runtime_env"
+          ssh homesolar-pi \
+            "APP_DIR='$PI_APP_DIR' SHA='$GITHUB_SHA' HOMESOLAR_IMAGE='$PRODUCTION_IMAGE' HOMESOLAR_CONFIG='$PI_CONFIG_PATH' HOMESOLAR_DATA_DIR='$PI_DATA_DIR' bash -s" <<'REMOTE'
+          set -euo pipefail
+          RUNTIME_ENV="$APP_DIR/.deploy/runtime.env"
+          test -f "$RUNTIME_ENV"
+          test -f "$HOMESOLAR_CONFIG"
+          mkdir -p "$HOMESOLAR_DATA_DIR"
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard "$SHA"
 
-      - name: Show service status
-        run: docker compose ps
+          docker compose --env-file "$RUNTIME_ENV" down
+          docker run --rm \
+            -v "$HOMESOLAR_CONFIG:/config/homesolar.yaml:ro" \
+            -v "$HOMESOLAR_DATA_DIR:/app/data" \
+            "$HOMESOLAR_IMAGE" \
+            python -m alembic upgrade head
+          docker compose --env-file "$RUNTIME_ENV" up --no-build -d
+          docker compose --env-file "$RUNTIME_ENV" ps
+          REMOTE
+
+  cleanup:
+    name: Cleanup old homesolar images
+    needs: deploy
+    runs-on: [self-hosted]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        uses: ./.github/actions/setup-pi-ssh
+        with:
+          private-key: ${{ secrets.PI_SSH_KEY }}
+          host: ${{ env.PI_HOST }}
+          port: ${{ env.PI_PORT }}
+          user: ${{ env.PI_USER }}
+
+      - name: Keep latest 5 homesolar production images
+        run: |
+          ssh homesolar-pi "APP_NAME='$APP_NAME' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cleanup_images() {
+            mode="$1"
+            docker image ls "$APP_NAME" --format '{{.Repository}}:{{.Tag}}' \
+              | while read -r image; do
+                  case "$mode:$image" in
+                    production:*:test-*) continue ;;
+                    test:*:test-*) ;;
+                    test:*) continue ;;
+                  esac
+                  created="$(docker image inspect -f '{{.Created}}' "$image")"
+                  printf '%s\t%s\n' "$created" "$image"
+                done \
+              | sort -r \
+              | awk 'NR>5 {print $2}' \
+              | xargs -r docker rmi
+          }
+          cleanup_images production
+          cleanup_images test
+          REMOTE

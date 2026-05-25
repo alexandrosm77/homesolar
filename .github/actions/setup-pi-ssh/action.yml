@@ -1,0 +1,36 @@
+name: Setup Raspberry Pi SSH
+description: Configure SSH key and known_hosts for the Raspberry Pi deploy target.
+inputs:
+  private-key:
+    required: true
+    description: SSH private key used to connect to the Raspberry Pi.
+  host:
+    required: true
+    description: Raspberry Pi host name or IP address.
+  port:
+    required: true
+    description: Raspberry Pi SSH port.
+  user:
+    required: true
+    description: Raspberry Pi SSH user.
+runs:
+  using: composite
+  steps:
+    - name: Configure SSH
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        printf '%s\n' '${{ inputs.private-key }}' > ~/.ssh/homesolar_deploy_key
+        chmod 600 ~/.ssh/homesolar_deploy_key
+        ssh-keyscan -p '${{ inputs.port }}' -H '${{ inputs.host }}' >> ~/.ssh/known_hosts
+        cat > ~/.ssh/config <<EOF
+        Host homesolar-pi
+          HostName ${{ inputs.host }}
+          User ${{ inputs.user }}
+          Port ${{ inputs.port }}
+          IdentityFile ~/.ssh/homesolar_deploy_key
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+        EOF

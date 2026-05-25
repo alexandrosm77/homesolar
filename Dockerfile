@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -16,6 +16,17 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install .
 
 COPY config/example.yaml ./config/example.yaml
+
+
+FROM base AS test
+
+COPY tests ./tests
+COPY remote_inverter_scrap.html ./remote_inverter_scrap.html
+
+RUN python -m pip install ".[dev]"
+
+
+FROM base AS production
 
 EXPOSE 8000
 

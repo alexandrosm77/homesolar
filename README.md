@@ -33,9 +33,10 @@ SQLite is stored in `./data/homesolar.sqlite` by default.
 
 The repository includes a workflow at `.github/workflows/deploy.yml`.
 
-It expects a self-hosted GitHub Actions runner on the Raspberry Pi with the custom label
-`homesolar-pi`. The deploy job runs on that runner, builds the Docker image locally, and restarts
-the Compose service.
+All jobs run on GitHub self-hosted runners. The workflow then SSHes from the runner into the
+Raspberry Pi, builds both Docker images on the Pi, tests the test image, runs migrations, deploys
+the production image, and removes old images while keeping the latest 5 production and latest 5
+test images.
 
 One-time setup on the Pi:
 
@@ -46,22 +47,41 @@ cp config/example.yaml /opt/homesolar/config/local.yaml
 ```
 
 Edit `/opt/homesolar/config/local.yaml` on the Pi with the real inverter URLs and polling intervals.
+The Pi user also needs Docker access and GitHub repository read access, because the workflow runs
+`git clone git@github.com:alexandrosm77/homesolar.git` on the Pi. Add a GitHub deploy key for the
+Pi or configure GitHub SSH access for the Pi user.
+
+Add these GitHub repository variables:
+
+```text
+PI_USER=alexandros
+PI_HOST=192.168.0.11
+PI_PORT=22
+PI_APP_DIR=/home/alexandros/homesolar
+PI_CONFIG_PATH=/opt/homesolar/config/local.yaml
+PI_DATA_DIR=/opt/homesolar/data
+HOMESOLAR_PORT=8000
+```
 
 Add these GitHub repository secrets:
 
 ```text
+PI_SSH_KEY
 REMOTE_INVERTER_USER
 REMOTE_INVERTER_PASSWORD
 ```
 
-The workflow uses these persistent host paths:
+`PI_SSH_KEY` is the private key used by the self-hosted runner to SSH into the Pi. Its public key
+must be present in `/home/alexandros/.ssh/authorized_keys` on the Pi.
+
+The workflow deploys these image tags on the Pi:
 
 ```text
-HOMESOLAR_CONFIG=/opt/homesolar/config/local.yaml
-HOMESOLAR_DATA_DIR=/opt/homesolar/data
+homesolar:<git-sha>
+homesolar:test-<git-sha>
 ```
 
-Pushes to `main` run tests and lint first, then deploy. You can also run the workflow manually from
+Pushes to `main` run build, test, deploy, and cleanup. You can also run the workflow manually from
 GitHub Actions.
 
 ## Configuration

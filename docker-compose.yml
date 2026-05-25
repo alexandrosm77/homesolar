@@ -1,6 +1,9 @@
 services:
   homesolar:
-    build: .
+    image: ${HOMESOLAR_IMAGE:-homesolar:local}
+    build:
+      context: .
+      target: production
     container_name: homesolar
     restart: unless-stopped
     ports:
