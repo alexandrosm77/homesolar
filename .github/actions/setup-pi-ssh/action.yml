@@ -18,18 +18,42 @@ runs:
   steps:
     - name: Configure SSH
       shell: bash
+      env:
+        PI_SSH_PRIVATE_KEY: ${{ inputs.private-key }}
+        PI_SSH_HOST: ${{ inputs.host }}
+        PI_SSH_PORT: ${{ inputs.port }}
+        PI_SSH_USER: ${{ inputs.user }}
       run: |
         set -euo pipefail
+        if [ -z "$PI_SSH_PRIVATE_KEY" ]; then
+          echo "::error::Missing PI_SSH_KEY secret. Add a production environment secret named PI_SSH_KEY containing the private SSH key for the Pi deploy user."
+          exit 1
+        fi
+        if [ -z "$PI_SSH_HOST" ]; then
+          echo "::error::Missing Raspberry Pi host. Set production environment variable PI_HOST, or keep the workflow default 192.168.0.11."
+          exit 1
+        fi
+        if [ -z "$PI_SSH_USER" ]; then
+          echo "::error::Missing Raspberry Pi SSH user. Set production environment variable PI_USER, or keep the workflow default alexandros."
+          exit 1
+        fi
+        if [ -z "$PI_SSH_PORT" ]; then
+          echo "::error::Missing Raspberry Pi SSH port. Set production environment variable PI_PORT, or keep the workflow default 22."
+          exit 1
+        fi
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
-        printf '%s\n' '${{ inputs.private-key }}' > ~/.ssh/homesolar_deploy_key
+        printf '%s\n' "$PI_SSH_PRIVATE_KEY" > ~/.ssh/homesolar_deploy_key
         chmod 600 ~/.ssh/homesolar_deploy_key
-        ssh-keyscan -p '${{ inputs.port }}' -H '${{ inputs.host }}' >> ~/.ssh/known_hosts
+        if ! ssh-keyscan -p "$PI_SSH_PORT" -H "$PI_SSH_HOST" >> ~/.ssh/known_hosts; then
+          echo "::error::Could not read the Raspberry Pi SSH host key from $PI_SSH_HOST:$PI_SSH_PORT. Check that the runner can reach the Pi and that SSH is listening."
+          exit 1
+        fi
         cat > ~/.ssh/config <<EOF
         Host homesolar-pi
-          HostName ${{ inputs.host }}
-          User ${{ inputs.user }}
-          Port ${{ inputs.port }}
+          HostName $PI_SSH_HOST
+          User $PI_SSH_USER
+          Port $PI_SSH_PORT
           IdentityFile ~/.ssh/homesolar_deploy_key
           IdentitiesOnly yes
           StrictHostKeyChecking yes

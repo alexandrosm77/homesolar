@@ -55,7 +55,7 @@ The Pi user also needs Docker access and GitHub repository read access, because 
 `git fetch` from `git@github.com:alexandrosm77/homesolar.git` on the Pi. Add a GitHub deploy key for the
 Pi or configure GitHub SSH access for the Pi user.
 
-Add these GitHub repository variables:
+Add these GitHub `production` environment variables:
 
 ```text
 PI_USER=alexandros
@@ -67,7 +67,7 @@ PI_DATA_DIR=/home/alexandros/homesolar/data
 HOMESOLAR_PORT=8080
 ```
 
-Add these GitHub repository secrets:
+Add these GitHub `production` environment secrets:
 
 ```text
 PI_SSH_KEY
@@ -103,4 +103,3 @@ For local runs, values from `.env` are loaded automatically. Docker Compose also
 
 Polling intervals are per inverter and per task, so remote/VPN-backed sources can be queried less
 often than LAN sources.
-

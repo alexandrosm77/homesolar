@@ -11,18 +11,17 @@ concurrency:
 
 env:
   APP_NAME: homesolar
-  PI_USER: ${{ vars.PI_USER }}
-  PI_HOST: ${{ vars.PI_HOST }}
-  PI_PORT: ${{ vars.PI_PORT || '22' }}
-  PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
-  PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/home/alexandros/homesolar/config/local.yaml' }}
-  PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/home/alexandros/homesolar/data' }}
-  HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8080' }}
 
 jobs:
   build:
     name: Build images on Raspberry Pi
     runs-on: [self-hosted]
+    environment: production
+    env:
+      PI_USER: ${{ vars.PI_USER || 'alexandros' }}
+      PI_HOST: ${{ vars.PI_HOST || '192.168.0.11' }}
+      PI_PORT: ${{ vars.PI_PORT || '22' }}
+      PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
     outputs:
       production_image: ${{ steps.names.outputs.production_image }}
       test_image: ${{ steps.names.outputs.test_image }}
@@ -69,6 +68,11 @@ jobs:
     name: Test image on Raspberry Pi
     needs: build
     runs-on: [self-hosted]
+    environment: production
+    env:
+      PI_USER: ${{ vars.PI_USER || 'alexandros' }}
+      PI_HOST: ${{ vars.PI_HOST || '192.168.0.11' }}
+      PI_PORT: ${{ vars.PI_PORT || '22' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -97,6 +101,14 @@ jobs:
     needs: [build, test]
     runs-on: [self-hosted]
     environment: production
+    env:
+      PI_USER: ${{ vars.PI_USER || 'alexandros' }}
+      PI_HOST: ${{ vars.PI_HOST || '192.168.0.11' }}
+      PI_PORT: ${{ vars.PI_PORT || '22' }}
+      PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
+      PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/home/alexandros/homesolar/config/local.yaml' }}
+      PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/home/alexandros/homesolar/data' }}
+      HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8080' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -163,6 +175,11 @@ jobs:
     name: Cleanup old homesolar images
     needs: deploy
     runs-on: [self-hosted]
+    environment: production
+    env:
+      PI_USER: ${{ vars.PI_USER || 'alexandros' }}
+      PI_HOST: ${{ vars.PI_HOST || '192.168.0.11' }}
+      PI_PORT: ${{ vars.PI_PORT || '22' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
