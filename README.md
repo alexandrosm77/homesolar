@@ -71,11 +71,13 @@ Add these GitHub `production` environment secrets:
 
 ```text
 PI_SSH_KEY
-HOMESOLAR_WEB_USER
 HOMESOLAR_WEB_PASSWORD
 REMOTE_INVERTER_USER
 REMOTE_INVERTER_PASSWORD
 ```
+
+Add `HOMESOLAR_WEB_USER` as a GitHub `production` environment variable. It may also be a secret,
+but the workflow reads the variable form first because the username is not sensitive.
 
 `PI_SSH_KEY` is the private key used by the self-hosted runner to SSH into the Pi. Its public key
 must be present in `/home/alexandros/.ssh/authorized_keys` on the Pi.
