@@ -152,21 +152,36 @@ jobs:
           rm -f "$runtime_env"
           ssh homesolar-pi \
             "APP_DIR='$PI_APP_DIR' SHA='$GITHUB_SHA' HOMESOLAR_IMAGE='$PRODUCTION_IMAGE' HOMESOLAR_CONFIG='$PI_CONFIG_PATH' HOMESOLAR_DATA_DIR='$PI_DATA_DIR' bash -s" <<'REMOTE'
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'echo "::error::Deploy failed on Raspberry Pi at line $LINENO while running: $BASH_COMMAND"' ERR
           RUNTIME_ENV="$APP_DIR/.deploy/runtime.env"
-          test -f "$RUNTIME_ENV"
-          test -f "$HOMESOLAR_CONFIG"
+          if [ ! -f "$RUNTIME_ENV" ]; then
+            echo "::error::Missing runtime env file: $RUNTIME_ENV"
+            exit 1
+          fi
+
           mkdir -p "$HOMESOLAR_DATA_DIR"
+          echo "Updating app checkout in $APP_DIR"
           cd "$APP_DIR"
           git fetch origin main
           git reset --hard "$SHA"
 
+          if [ ! -f "$HOMESOLAR_CONFIG" ]; then
+            echo "::error::Missing homesolar config file: $HOMESOLAR_CONFIG"
+            echo "::error::Create it on the Pi with: cp $APP_DIR/config/example.yaml $HOMESOLAR_CONFIG"
+            echo "::error::Then edit it with the real inverter URLs and polling intervals before rerunning deploy."
+            exit 1
+          fi
+
+          echo "Stopping current service"
           docker compose --env-file "$RUNTIME_ENV" down
+          echo "Running database migrations with $HOMESOLAR_IMAGE"
           docker run --rm \
             -v "$HOMESOLAR_CONFIG:/config/homesolar.yaml:ro" \
             -v "$HOMESOLAR_DATA_DIR:/app/data" \
             "$HOMESOLAR_IMAGE" \
             python -m alembic upgrade head
+          echo "Starting service on external port from HOMESOLAR_PORT"
           docker compose --env-file "$RUNTIME_ENV" up --no-build -d
           docker compose --env-file "$RUNTIME_ENV" ps
           REMOTE
