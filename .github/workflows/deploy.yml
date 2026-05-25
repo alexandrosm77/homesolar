@@ -15,9 +15,9 @@ env:
   PI_HOST: ${{ vars.PI_HOST }}
   PI_PORT: ${{ vars.PI_PORT || '22' }}
   PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
-  PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/opt/homesolar/config/local.yaml' }}
-  PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/opt/homesolar/data' }}
-  HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8000' }}
+  PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/home/alexandros/homesolar/config/local.yaml' }}
+  PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/home/alexandros/homesolar/data' }}
+  HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8080' }}
 
 jobs:
   build:
@@ -53,8 +53,10 @@ jobs:
             "APP_DIR='$PI_APP_DIR' REPO='${{ github.repository }}' SHA='$GITHUB_SHA' PRODUCTION_IMAGE='$PRODUCTION_IMAGE' TEST_IMAGE='$TEST_IMAGE' bash -s" <<'REMOTE'
           set -euo pipefail
           if [ ! -d "$APP_DIR/.git" ]; then
-            mkdir -p "$(dirname "$APP_DIR")"
-            git clone "git@github.com:$REPO.git" "$APP_DIR"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            git init
+            git remote add origin "git@github.com:$REPO.git"
           fi
           cd "$APP_DIR"
           git fetch origin main

@@ -41,14 +41,18 @@ test images.
 One-time setup on the Pi:
 
 ```bash
-sudo mkdir -p /opt/homesolar/config /opt/homesolar/data
-sudo chown -R "$USER":"$USER" /opt/homesolar
-cp config/example.yaml /opt/homesolar/config/local.yaml
+mkdir -p /home/alexandros
+git clone git@github.com:alexandrosm77/homesolar.git /home/alexandros/homesolar
+cd /home/alexandros/homesolar
+mkdir -p /home/alexandros/homesolar/config /home/alexandros/homesolar/data
+cp config/example.yaml /home/alexandros/homesolar/config/local.yaml
 ```
 
-Edit `/opt/homesolar/config/local.yaml` on the Pi with the real inverter URLs and polling intervals.
+Edit `/home/alexandros/homesolar/config/local.yaml` on the Pi with the real inverter URLs and polling
+intervals. `config/local.yaml`, `data/`, and `.deploy/` are git-ignored runtime paths inside the app
+directory.
 The Pi user also needs Docker access and GitHub repository read access, because the workflow runs
-`git clone git@github.com:alexandrosm77/homesolar.git` on the Pi. Add a GitHub deploy key for the
+`git fetch` from `git@github.com:alexandrosm77/homesolar.git` on the Pi. Add a GitHub deploy key for the
 Pi or configure GitHub SSH access for the Pi user.
 
 Add these GitHub repository variables:
@@ -58,9 +62,9 @@ PI_USER=alexandros
 PI_HOST=192.168.0.11
 PI_PORT=22
 PI_APP_DIR=/home/alexandros/homesolar
-PI_CONFIG_PATH=/opt/homesolar/config/local.yaml
-PI_DATA_DIR=/opt/homesolar/data
-HOMESOLAR_PORT=8000
+PI_CONFIG_PATH=/home/alexandros/homesolar/config/local.yaml
+PI_DATA_DIR=/home/alexandros/homesolar/data
+HOMESOLAR_PORT=8080
 ```
 
 Add these GitHub repository secrets:
