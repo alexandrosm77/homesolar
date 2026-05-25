@@ -1,0 +1,13 @@
+services:
+  homesolar:
+    build: .
+    container_name: homesolar
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      REMOTE_INVERTER_USER: ${REMOTE_INVERTER_USER:-}
+      REMOTE_INVERTER_PASSWORD: ${REMOTE_INVERTER_PASSWORD:-}
+    volumes:
+      - ./config/local.yaml:/config/homesolar.yaml:ro
+      - ./data:/app/data

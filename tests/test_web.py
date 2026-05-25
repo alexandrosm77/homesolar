@@ -1,0 +1,178 @@
+from homesolar.config import AppConfig, CollectorConfig, DatabaseConfig, InverterConfig
+from homesolar.db import models
+from homesolar.web.app import create_app
+
+
+def test_health_endpoint_with_collector_disabled(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Test" in response.text
+    assert 'class="chart-wrap"' in response.text
+    assert 'id="resetDashboard"' in response.text
+
+
+def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="kostal",
+                name="Kostal",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        session_factory = app.state.session_factory
+        with session_factory() as session:
+            session.add(
+                models.Reading(
+                    inverter_id="kostal",
+                    observed_at=datetime.now(UTC),
+                    current_power_w=5000,
+                    energy_today_kwh=10.13,
+                    energy_lifetime_kwh=64262,
+                    energy_session_kwh=None,
+                    status="feed in (MPP)",
+                    extra={},
+                )
+            )
+            session.add(
+                models.EnergyInterval(
+                    inverter_id="kostal",
+                    start_at=datetime.now(UTC),
+                    end_at=datetime.now(UTC),
+                    start_reading_id=1,
+                    end_reading_id=1,
+                    generated_kwh=0,
+                    source_counter="lifetime",
+                    confidence="normal",
+                )
+            )
+            session.commit()
+
+        response = client.get("/api/inverters")
+
+    assert response.status_code == 200
+    assert response.json()[0]["today_kwh"] == 10.13
+
+
+def test_filter_and_aggregate_endpoints(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="one",
+                name="One",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from datetime import UTC, datetime, timedelta
+
+    from fastapi.testclient import TestClient
+
+    now = datetime.now(UTC)
+    with TestClient(app) as client:
+        session_factory = app.state.session_factory
+        with session_factory() as session:
+            first = models.Reading(
+                inverter_id="one",
+                observed_at=now - timedelta(minutes=10),
+                current_power_w=1000,
+                energy_today_kwh=1.0,
+                energy_lifetime_kwh=100.0,
+                energy_session_kwh=None,
+                status="ok",
+                extra={},
+            )
+            second = models.Reading(
+                inverter_id="one",
+                observed_at=now,
+                current_power_w=1500,
+                energy_today_kwh=1.25,
+                energy_lifetime_kwh=100.25,
+                energy_session_kwh=None,
+                status="ok",
+                extra={},
+            )
+            session.add_all([first, second])
+            session.flush()
+            session.add(
+                models.EnergyInterval(
+                    inverter_id="one",
+                    start_at=first.observed_at,
+                    end_at=second.observed_at,
+                    start_reading_id=first.id,
+                    end_reading_id=second.id,
+                    generated_kwh=0.25,
+                    source_counter="lifetime",
+                    confidence="normal",
+                )
+            )
+            session.commit()
+
+        power = client.get("/api/chart/power?range=24h&inverter_id=one")
+        summary = client.get("/api/summary?range=today&inverter_id=one")
+        aggregates = client.get("/api/aggregates?period=daily&inverter_id=one&limit=2")
+
+    assert power.status_code == 200
+    assert power.json()["series"][0]["points"][-1]["y"] == 1500
+    assert summary.status_code == 200
+    assert summary.json()["total_kwh"] == 1.25
+    assert aggregates.status_code == 200
+    assert aggregates.json()["series"][0]["data"][-1] == 1.25

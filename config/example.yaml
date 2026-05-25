@@ -1,0 +1,35 @@
+database:
+  url: sqlite:///./data/homesolar.sqlite
+
+collector:
+  enabled: true
+  request_timeout_seconds: 10
+
+web:
+  host: 0.0.0.0
+  port: 8000
+
+inverters:
+  - id: apsystems_home
+    name: APsystems Home
+    type: apsystems_ez1d
+    base_url: http://192.168.0.193:8050
+    timezone: Europe/London
+    polling:
+      live_seconds: 60
+      alarm_seconds: 1800
+      info_seconds: 3600
+
+  - id: remote_kostal
+    name: Remote Kostal
+    type: kostal_html
+    base_url: http://10.0.0.10
+    timezone: Europe/London
+    auth:
+      type: basic
+      username_env: REMOTE_INVERTER_USER
+      password_env: REMOTE_INVERTER_PASSWORD
+    polling:
+      live_seconds: 300
+      alarm_seconds: null
+      info_seconds: null
