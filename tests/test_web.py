@@ -250,3 +250,52 @@ def test_web_auth_requires_configured_env_vars(tmp_path, monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="Missing required web auth env var"):
         create_app(config)
+
+
+def test_default_web_auth_env_vars_enable_auth_without_yaml_config(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        anonymous = client.get("/")
+        authorized = client.get("/", auth=("solar", "secret"))
+
+    assert anonymous.status_code == 401
+    assert authorized.status_code == 200
+
+
+def test_default_web_auth_env_vars_fail_closed_if_partially_configured(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.delenv("HOMESOLAR_WEB_PASSWORD", raising=False)
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="HOMESOLAR_WEB_PASSWORD"):
+        create_app(config)

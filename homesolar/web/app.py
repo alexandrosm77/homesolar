@@ -24,6 +24,8 @@ from homesolar.db import models
 from homesolar.db.session import create_schema, engine_from_url, sessionmaker_from_engine
 
 PACKAGE_DIR = Path(__file__).resolve().parent
+DEFAULT_WEB_USERNAME_ENV = "HOMESOLAR_WEB_USER"
+DEFAULT_WEB_PASSWORD_ENV = "HOMESOLAR_WEB_PASSWORD"
 templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 
 
@@ -220,7 +222,14 @@ def create_app(config: AppConfig) -> FastAPI:
 def _web_credentials(config: AppConfig) -> tuple[str, str] | None:
     auth = config.web.auth
     if auth is None:
-        return None
+        username = os.environ.get(DEFAULT_WEB_USERNAME_ENV)
+        password = os.environ.get(DEFAULT_WEB_PASSWORD_ENV)
+        if not username and not password:
+            return None
+        if username and password:
+            return username, password
+        missing = DEFAULT_WEB_PASSWORD_ENV if username else DEFAULT_WEB_USERNAME_ENV
+        raise RuntimeError(f"Missing required web auth env var(s): {missing}")
 
     username = os.environ.get(auth.username_env)
     password = os.environ.get(auth.password_env)

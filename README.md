@@ -113,6 +113,10 @@ The web dashboard and API are protected when `web.auth` is configured. `/health`
 load balancers and uptime checks can probe the service. If `web.auth` is configured but either env
 var is missing, the app exits during startup instead of serving a public dashboard.
 
+If `web.auth` is not configured, the app also enables web auth automatically when both
+`HOMESOLAR_WEB_USER` and `HOMESOLAR_WEB_PASSWORD` are present. This keeps deployments protected even
+when the runtime YAML is managed outside git.
+
 For local runs, values from `.env` are loaded automatically. Docker Compose also reads `.env`.
 
 Polling intervals are per inverter and per task, so remote/VPN-backed sources can be queried less
