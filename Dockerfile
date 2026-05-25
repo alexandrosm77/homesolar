@@ -11,6 +11,8 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY homesolar ./homesolar
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install .
