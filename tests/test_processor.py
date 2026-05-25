@@ -27,7 +27,11 @@ def test_processor_stores_interval_from_lifetime_counter() -> None:
         store_adapter_result(session, config, _result(first_at + timedelta(minutes=1), 100.05))
         session.commit()
 
+        inverter = session.get(models.Inverter, "test")
         interval = session.scalars(select(models.EnergyInterval)).one()
+        assert inverter is not None
+        assert inverter.first_seen_at.replace(tzinfo=UTC) == first_at
+        assert inverter.last_seen_at.replace(tzinfo=UTC) == first_at + timedelta(minutes=1)
         assert interval.generated_kwh == 0.05
         assert interval.source_counter == "lifetime"
         assert interval.confidence == "normal"

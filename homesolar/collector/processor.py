@@ -41,10 +41,15 @@ def ensure_inverter(session: Session, config: InverterConfig) -> models.Inverter
 
 
 def store_adapter_result(session: Session, config: InverterConfig, result: AdapterResult) -> None:
-    ensure_inverter(session, config)
+    inverter = ensure_inverter(session, config)
+    observed_at = _observed_at(result)
+    if inverter.first_seen_at is None or _as_utc(observed_at) < _as_utc(inverter.first_seen_at):
+        inverter.first_seen_at = observed_at
+    if inverter.last_seen_at is None or _as_utc(observed_at) > _as_utc(inverter.last_seen_at):
+        inverter.last_seen_at = observed_at
     raw_model = models.RawPayload(
         inverter_id=config.id,
-        observed_at=_observed_at(result),
+        observed_at=observed_at,
         kind=result.raw.kind,
         content_type=str(result.raw.content_type),
         status_code=result.raw.status_code,
@@ -149,6 +154,12 @@ def _observed_at(result: AdapterResult) -> datetime:
     if result.info:
         return result.info.observed_at
     return datetime.now(UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _store_interval(session: Session, inverter_id: str, current: models.Reading) -> None:

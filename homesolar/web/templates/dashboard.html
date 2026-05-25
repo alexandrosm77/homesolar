@@ -136,6 +136,10 @@
                   <dd>{{ item.age_label }}</dd>
                 </div>
                 <div>
+                  <dt>last seen</dt>
+                  <dd>{{ item.seen_age_label }}</dd>
+                </div>
+                <div>
                   <dt>poll</dt>
                   <dd class="{{ 'ok' if last_poll and last_poll.success else 'bad' }}">
                     {{ "ok" if last_poll and last_poll.success else "waiting" }}

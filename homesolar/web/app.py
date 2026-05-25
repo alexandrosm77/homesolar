@@ -71,6 +71,8 @@ def create_app(config: AppConfig) -> FastAPI:
                     "base_url": inverter.base_url,
                     "enabled": inverter.enabled,
                     "timezone": inverter.timezone,
+                    "first_seen_at": _iso_or_none(inverter.first_seen_at),
+                    "last_seen_at": _iso_or_none(inverter.last_seen_at),
                     "latest": _latest_reading_dict(session, inverter.id),
                     "last_poll": _last_poll_dict(session, inverter.id),
                     "latest_alarm": _latest_alarm_dict(session, inverter.id),
@@ -214,6 +216,7 @@ def _dashboard_view(session: Session) -> dict:
         alarm = _latest_alarm_dict(session, inverter.id)
         components = _latest_components(session, latest.id) if latest else []
         age_seconds = _age_seconds(latest.observed_at, now) if latest else None
+        seen_age_seconds = _age_seconds(inverter.last_seen_at, now) if inverter.last_seen_at else None
         is_online = bool(latest and last_poll and last_poll.success and (age_seconds is None or age_seconds < 900))
         if latest_power is not None:
             total_power += latest_power
@@ -234,6 +237,7 @@ def _dashboard_view(session: Session) -> dict:
                 "latest_alarm": alarm,
                 "components": components,
                 "age_label": _duration_label(age_seconds),
+                "seen_age_label": _duration_label(seen_age_seconds),
                 "is_online": is_online,
                 "state_label": _state_label(is_online, last_poll, alarm),
             }
@@ -526,6 +530,8 @@ def _inverter_dict(inverter: models.Inverter) -> dict:
         "base_url": inverter.base_url,
         "enabled": inverter.enabled,
         "timezone": inverter.timezone,
+        "first_seen_at": _iso_or_none(inverter.first_seen_at),
+        "last_seen_at": _iso_or_none(inverter.last_seen_at),
     }
 
 
@@ -541,6 +547,10 @@ def _reading_dict(reading: models.Reading) -> dict:
         "status": reading.status,
         "extra": reading.extra,
     }
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
 
 
 def _component_dict(component: models.ComponentReading) -> dict:

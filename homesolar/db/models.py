@@ -20,6 +20,8 @@ class Inverter(Base):
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
     timezone: Mapped[str] = mapped_column(String(80), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     readings: Mapped[list[Reading]] = relationship(back_populates="inverter")
 
