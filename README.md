@@ -71,6 +71,8 @@ Add these GitHub `production` environment secrets:
 
 ```text
 PI_SSH_KEY
+HOMESOLAR_WEB_USER
+HOMESOLAR_WEB_PASSWORD
 REMOTE_INVERTER_USER
 REMOTE_INVERTER_PASSWORD
 ```
@@ -93,14 +95,25 @@ GitHub Actions.
 Credentials are referenced through environment variables so secrets do not need to live in YAML:
 
 ```yaml
-auth:
-  type: basic
-  username_env: REMOTE_INVERTER_USER
-  password_env: REMOTE_INVERTER_PASSWORD
+web:
+  auth:
+    type: basic
+    username_env: HOMESOLAR_WEB_USER
+    password_env: HOMESOLAR_WEB_PASSWORD
+
+inverters:
+  - id: remote_kostal
+    auth:
+      type: basic
+      username_env: REMOTE_INVERTER_USER
+      password_env: REMOTE_INVERTER_PASSWORD
 ```
+
+The web dashboard and API are protected when `web.auth` is configured. `/health` remains public so
+load balancers and uptime checks can probe the service. If `web.auth` is configured but either env
+var is missing, the app exits during startup instead of serving a public dashboard.
 
 For local runs, values from `.env` are loaded automatically. Docker Compose also reads `.env`.
 
 Polling intervals are per inverter and per task, so remote/VPN-backed sources can be queried less
 often than LAN sources.
-

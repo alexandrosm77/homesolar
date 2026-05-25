@@ -1,4 +1,13 @@
-from homesolar.config import AppConfig, CollectorConfig, DatabaseConfig, InverterConfig
+import pytest
+
+from homesolar.config import (
+    AppConfig,
+    BasicAuthConfig,
+    CollectorConfig,
+    DatabaseConfig,
+    InverterConfig,
+    WebConfig,
+)
 from homesolar.db import models
 from homesolar.web.app import create_app
 
@@ -176,3 +185,68 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
     assert summary.json()["total_kwh"] == 1.25
     assert aggregates.status_code == 200
     assert aggregates.json()["series"][0]["data"][-1] == 1.25
+
+
+def test_web_auth_protects_dashboard_and_api_but_not_health(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        health = client.get("/health")
+        dashboard = client.get("/")
+        api = client.get("/api/inverters")
+        authorized = client.get("/", auth=("solar", "secret"))
+
+    assert health.status_code == 200
+    assert dashboard.status_code == 401
+    assert dashboard.headers["WWW-Authenticate"] == 'Basic realm="homesolar"'
+    assert api.status_code == 401
+    assert authorized.status_code == 200
+    assert "Test" in authorized.text
+
+
+def test_web_auth_requires_configured_env_vars(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("HOMESOLAR_WEB_USER", raising=False)
+    monkeypatch.delenv("HOMESOLAR_WEB_PASSWORD", raising=False)
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="Missing required web auth env var"):
+        create_app(config)

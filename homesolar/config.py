@@ -47,6 +47,7 @@ class CollectorConfig(BaseModel):
 class WebConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+    auth: BasicAuthConfig | None = None
 
 
 class AppConfig(BaseModel):

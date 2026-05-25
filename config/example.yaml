@@ -8,6 +8,10 @@ collector:
 web:
   host: 0.0.0.0
   port: 8000
+  auth:
+    type: basic
+    username_env: HOMESOLAR_WEB_USER
+    password_env: HOMESOLAR_WEB_PASSWORD
 
 inverters:
   - id: apsystems_home

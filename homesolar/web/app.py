@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
+import os
 from pathlib import Path
+import secrets
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -28,6 +32,7 @@ def create_app(config: AppConfig) -> FastAPI:
     create_schema(engine)
     session_factory = sessionmaker_from_engine(engine)
     collector = CollectorService(config, session_factory)
+    web_credentials = _web_credentials(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -45,6 +50,19 @@ def create_app(config: AppConfig) -> FastAPI:
             await collector.stop()
 
     app = FastAPI(title="homesolar", version="0.1.0", lifespan=lifespan)
+
+    if web_credentials is not None:
+
+        @app.middleware("http")
+        async def require_basic_auth(request: Request, call_next):
+            if request.url.path == "/health":
+                return await call_next(request)
+
+            if not _request_is_authorized(request, web_credentials):
+                return _auth_challenge()
+
+            return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
 
     @app.get("/", response_class=HTMLResponse)
@@ -197,6 +215,59 @@ def create_app(config: AppConfig) -> FastAPI:
             return _summary_for_range(session, range_name=range_name, inverter_id=inverter_id)
 
     return app
+
+
+def _web_credentials(config: AppConfig) -> tuple[str, str] | None:
+    auth = config.web.auth
+    if auth is None:
+        return None
+
+    username = os.environ.get(auth.username_env)
+    password = os.environ.get(auth.password_env)
+    missing = [
+        env_name
+        for env_name, value in (
+            (auth.username_env, username),
+            (auth.password_env, password),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"Missing required web auth env var(s): {', '.join(missing)}")
+
+    return username, password
+
+
+def _request_is_authorized(request: Request, credentials: tuple[str, str]) -> bool:
+    header = request.headers.get("Authorization")
+    if not header:
+        return False
+
+    scheme, _, param = header.partition(" ")
+    if scheme.lower() != "basic" or not param:
+        return False
+
+    try:
+        decoded = base64.b64decode(param, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        return False
+
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return False
+
+    expected_username, expected_password = credentials
+    return secrets.compare_digest(username, expected_username) and secrets.compare_digest(
+        password, expected_password
+    )
+
+
+def _auth_challenge() -> PlainTextResponse:
+    return PlainTextResponse(
+        "Authentication required",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="homesolar"'},
+    )
 
 
 def _dashboard_view(session: Session) -> dict:

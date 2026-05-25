@@ -124,6 +124,8 @@ jobs:
       - name: Stop current app, migrate, and deploy
         env:
           PRODUCTION_IMAGE: ${{ needs.build.outputs.production_image }}
+          HOMESOLAR_WEB_USER: ${{ secrets.HOMESOLAR_WEB_USER }}
+          HOMESOLAR_WEB_PASSWORD: ${{ secrets.HOMESOLAR_WEB_PASSWORD }}
           REMOTE_INVERTER_USER: ${{ secrets.REMOTE_INVERTER_USER }}
           REMOTE_INVERTER_PASSWORD: ${{ secrets.REMOTE_INVERTER_PASSWORD }}
         run: |
@@ -144,6 +146,8 @@ jobs:
             write_env HOMESOLAR_CONFIG "$PI_CONFIG_PATH"
             write_env HOMESOLAR_DATA_DIR "$PI_DATA_DIR"
             write_env HOMESOLAR_PORT "$HOMESOLAR_PORT"
+            write_env HOMESOLAR_WEB_USER "$HOMESOLAR_WEB_USER"
+            write_env HOMESOLAR_WEB_PASSWORD "$HOMESOLAR_WEB_PASSWORD"
             write_env REMOTE_INVERTER_USER "$REMOTE_INVERTER_USER"
             write_env REMOTE_INVERTER_PASSWORD "$REMOTE_INVERTER_PASSWORD"
           } > "$runtime_env"
