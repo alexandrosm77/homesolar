@@ -96,6 +96,83 @@ dt,
   font-size: 1.2rem;
 }
 
+.today form {
+  margin-top: 8px;
+}
+
+.logout-btn,
+.login-panel button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 720;
+}
+
+.logout-btn {
+  padding: 0 12px;
+}
+
+.login-body {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.login-shell {
+  width: min(100%, 390px);
+}
+
+.login-panel {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.login-panel h1 {
+  font-size: 2.1rem;
+  line-height: 1;
+}
+
+.login-panel label span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.login-panel input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.login-panel button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.login-error {
+  padding: 10px 11px;
+  border: 1px solid #f1b8b2;
+  border-radius: 8px;
+  background: #fff3f1;
+  color: var(--bad);
+  font-weight: 700;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

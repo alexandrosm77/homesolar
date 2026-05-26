@@ -214,16 +214,73 @@ def test_web_auth_protects_dashboard_and_api_but_not_health(tmp_path, monkeypatc
 
     with TestClient(app) as client:
         health = client.get("/health")
-        dashboard = client.get("/")
+        dashboard = client.get("/", follow_redirects=False)
         api = client.get("/api/inverters")
         authorized = client.get("/", auth=("solar", "secret"))
 
     assert health.status_code == 200
-    assert dashboard.status_code == 401
-    assert dashboard.headers["WWW-Authenticate"] == 'Basic realm="homesolar"'
+    assert dashboard.status_code == 303
+    assert dashboard.headers["location"] == "login"
     assert api.status_code == 401
+    assert api.headers["WWW-Authenticate"] == 'Basic realm="homesolar"'
     assert authorized.status_code == 200
     assert "Test" in authorized.text
+    assert "Logout" in authorized.text
+
+
+def test_web_auth_login_and_logout_flow(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        login_page = client.get("/login")
+        bad_login = client.post(
+            "/login",
+            data={"username": "solar", "password": "wrong"},
+            follow_redirects=False,
+        )
+        good_login = client.post(
+            "/login",
+            data={"username": "solar", "password": "secret"},
+            follow_redirects=False,
+        )
+        dashboard = client.get("/")
+        logout = client.post("/logout", follow_redirects=False)
+        logged_out_dashboard = client.get("/", follow_redirects=False)
+
+    assert login_page.status_code == 200
+    assert "Sign in" in login_page.text
+    assert bad_login.status_code == 401
+    assert "Invalid username or password" in bad_login.text
+    assert good_login.status_code == 303
+    assert good_login.headers["location"] == "."
+    assert "homesolar_session" in good_login.headers["set-cookie"]
+    assert dashboard.status_code == 200
+    assert "Test" in dashboard.text
+    assert logout.status_code == 303
+    assert logout.headers["location"] == "login"
+    assert logged_out_dashboard.status_code == 303
 
 
 def test_web_auth_requires_configured_env_vars(tmp_path, monkeypatch) -> None:
@@ -272,10 +329,11 @@ def test_default_web_auth_env_vars_enable_auth_without_yaml_config(tmp_path, mon
     from fastapi.testclient import TestClient
 
     with TestClient(app) as client:
-        anonymous = client.get("/")
+        anonymous = client.get("/", follow_redirects=False)
         authorized = client.get("/", auth=("solar", "secret"))
 
-    assert anonymous.status_code == 401
+    assert anonymous.status_code == 303
+    assert anonymous.headers["location"] == "login"
     assert authorized.status_code == 200
 
 

@@ -5,13 +5,15 @@ import binascii
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
+import hashlib
+import hmac
 import os
 from pathlib import Path
 import secrets
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -26,6 +28,8 @@ from homesolar.db.session import create_schema, engine_from_url, sessionmaker_fr
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_WEB_USERNAME_ENV = "HOMESOLAR_WEB_USER"
 DEFAULT_WEB_PASSWORD_ENV = "HOMESOLAR_WEB_PASSWORD"
+SESSION_COOKIE_NAME = "homesolar_session"
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 
 
@@ -56,14 +60,17 @@ def create_app(config: AppConfig) -> FastAPI:
     if web_credentials is not None:
 
         @app.middleware("http")
-        async def require_basic_auth(request: Request, call_next):
-            if request.url.path == "/health":
+        async def require_web_auth(request: Request, call_next):
+            if _is_public_path(request.url.path):
                 return await call_next(request)
 
-            if not _request_is_authorized(request, web_credentials):
+            if _request_is_authorized(request, web_credentials):
+                return await call_next(request)
+
+            if request.url.path.startswith("/api"):
                 return _auth_challenge()
 
-            return await call_next(request)
+            return RedirectResponse(url=_login_redirect_url(request), status_code=303)
 
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
 
@@ -74,6 +81,46 @@ def create_app(config: AppConfig) -> FastAPI:
         return templates.TemplateResponse(
             request, "dashboard.html", {"view": view, "title": "homesolar"}
         )
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request) -> Response:
+        if web_credentials is not None and _request_is_authorized(request, web_credentials):
+            return RedirectResponse(url=".", status_code=303)
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"title": "homesolar login", "error": None},
+        )
+
+    @app.post("/login")
+    async def login(
+        request: Request,
+        username: str = Form(default=""),
+        password: str = Form(default=""),
+    ) -> Response:
+        if web_credentials is None:
+            return RedirectResponse(url=".", status_code=303)
+
+        expected_username, expected_password = web_credentials
+        if secrets.compare_digest(username, expected_username) and secrets.compare_digest(
+            password, expected_password
+        ):
+            response = RedirectResponse(url=".", status_code=303)
+            _set_session_cookie(response, web_credentials)
+            return response
+
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"title": "homesolar login", "error": "Invalid username or password"},
+            status_code=401,
+        )
+
+    @app.post("/logout")
+    def logout() -> RedirectResponse:
+        response = RedirectResponse(url="login", status_code=303)
+        response.delete_cookie(SESSION_COOKIE_NAME, path="/", samesite="lax")
+        return response
 
     @app.get("/health")
     def health() -> dict:
@@ -248,6 +295,12 @@ def _web_credentials(config: AppConfig) -> tuple[str, str] | None:
 
 
 def _request_is_authorized(request: Request, credentials: tuple[str, str]) -> bool:
+    return _request_has_valid_session(request, credentials) or _request_has_valid_basic_auth(
+        request, credentials
+    )
+
+
+def _request_has_valid_basic_auth(request: Request, credentials: tuple[str, str]) -> bool:
     header = request.headers.get("Authorization")
     if not header:
         return False
@@ -269,6 +322,55 @@ def _request_is_authorized(request: Request, credentials: tuple[str, str]) -> bo
     return secrets.compare_digest(username, expected_username) and secrets.compare_digest(
         password, expected_password
     )
+
+
+def _request_has_valid_session(request: Request, credentials: tuple[str, str]) -> bool:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not cookie:
+        return False
+
+    try:
+        issued_at_text, signature = cookie.split(".", 1)
+        issued_at = int(issued_at_text)
+    except ValueError:
+        return False
+
+    now = int(datetime.now(UTC).timestamp())
+    if issued_at > now or now - issued_at > SESSION_MAX_AGE_SECONDS:
+        return False
+
+    return secrets.compare_digest(signature, _session_signature(issued_at_text, credentials))
+
+
+def _set_session_cookie(response: Response, credentials: tuple[str, str]) -> None:
+    issued_at = str(int(datetime.now(UTC).timestamp()))
+    value = f"{issued_at}.{_session_signature(issued_at, credentials)}"
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        value,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _session_signature(issued_at: str, credentials: tuple[str, str]) -> str:
+    username, password = credentials
+    return hmac.new(
+        password.encode("utf-8"),
+        f"{username}.{issued_at}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _is_public_path(path: str) -> bool:
+    return path == "/health" or path == "/login" or path.startswith("/static/")
+
+
+def _login_redirect_url(request: Request) -> str:
+    return "login" if request.url.path == "/" else "./login"
 
 
 def _auth_challenge() -> PlainTextResponse:

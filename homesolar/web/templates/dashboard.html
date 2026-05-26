@@ -18,6 +18,9 @@
         <div class="today">
           <span>today</span>
           <strong>{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
+          <form method="post" action="logout">
+            <button class="logout-btn" type="submit">Logout</button>
+          </form>
         </div>
       </header>
 
