@@ -401,6 +401,8 @@ def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
     assert 'href="/homesolar/static/css/app.css"' in login_page.text
     assert 'href="/homesolar/static/css/app.css"' in dashboard.text
     assert 'src="/homesolar/static/js/dashboard.js"' in dashboard.text
+    assert 'data-api-base-path="/homesolar"' in dashboard.text
+    assert 'id="powerChartTotal"' in dashboard.text
     assert 'href="/homesolar/static/css/app.css"' in admin_page.text
     assert "admin/static/css" not in admin_page.text
 

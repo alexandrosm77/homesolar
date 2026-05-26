@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   </head>
-  <body>
+  <body data-api-base-path="{{ asset_base_path }}">
     <main class="shell">
       <header class="topbar">
         <div>
@@ -95,7 +95,7 @@
         <section class="panel chart-panel">
           <div class="panel-head">
             <h2>Power</h2>
-            <span>{{ "%.2f"|format(view.total_today_kwh) }} kWh</span>
+            <span id="powerChartTotal">{{ "%.2f"|format(view.total_today_kwh) }} kWh</span>
           </div>
           <div class="chart-wrap">
             <canvas id="todayChart"></canvas>

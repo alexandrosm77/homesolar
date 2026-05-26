@@ -4,11 +4,13 @@
   const inverterFilter = document.getElementById("inverterFilter");
   const aggregatePeriod = document.getElementById("aggregatePeriod");
   const resetDashboard = document.getElementById("resetDashboard");
+  const powerChartTotal = document.getElementById("powerChartTotal");
   const rangeButtons = Array.from(document.querySelectorAll(".range-btn"));
   const componentPanels = Array.from(document.querySelectorAll("[data-component-panel]"));
   const storageKey = "homesolar.dashboard.settings";
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
+  const apiBasePath = document.body.dataset.apiBasePath || "";
   let selectedRange = "today";
   let powerChart = null;
   let aggregateChart = null;
@@ -112,10 +114,14 @@
     return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  function apiUrl(path, params) {
+    return `${apiBasePath}${path}?${params}`;
+  }
+
   async function loadPowerChart() {
     const params = inverterParams();
     params.set("range", selectedRange);
-    const response = await fetch(`/api/chart/power?${params}`);
+    const response = await fetch(apiUrl("/api/chart/power", params));
     const payload = await response.json();
 
     const datasets = payload.series.map((series, index) => ({
@@ -169,12 +175,15 @@
   async function loadSummary() {
     const params = inverterParams();
     params.set("range", selectedRange);
-    const response = await fetch(`/api/summary?${params}`);
+    const response = await fetch(apiUrl("/api/summary", params));
     const summary = await response.json();
     document.querySelector('[data-summary="total"]').textContent = formatEnergy(summary.total_kwh);
     document.querySelector('[data-summary="peak"]').textContent = formatPower(summary.peak_power_w);
     document.querySelector('[data-summary="average"]').textContent = formatPower(summary.average_power_w);
     document.querySelector('[data-summary="samples"]').textContent = summary.reading_count ?? "--";
+    if (powerChartTotal) {
+      powerChartTotal.textContent = formatEnergy(summary.total_kwh);
+    }
   }
 
   async function loadAggregateChart() {
@@ -183,7 +192,7 @@
     const limits = { daily: 14, weekly: 12, monthly: 12, yearly: 5 };
     params.set("period", period);
     params.set("limit", limits[period] || 14);
-    const response = await fetch(`/api/aggregates?${params}`);
+    const response = await fetch(apiUrl("/api/aggregates", params));
     const payload = await response.json();
 
     const datasets = payload.series.map((series, index) => ({
