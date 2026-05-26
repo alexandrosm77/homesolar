@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import select
 
 from homesolar.config import (
     AppConfig,
@@ -282,6 +283,81 @@ def test_web_auth_login_and_logout_flow(tmp_path, monkeypatch) -> None:
     assert logout.status_code == 303
     assert logout.headers["location"] == "login"
     assert logged_out_dashboard.status_code == 303
+
+
+def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        with app.state.session_factory() as session:
+            admin = session.scalar(select(models.AppUser).where(models.AppUser.username == "solar"))
+            assert admin is not None
+            assert admin.is_admin is True
+            assert admin.enabled is True
+
+        client.post(
+            "/login",
+            data={"username": "solar", "password": "secret"},
+            follow_redirects=False,
+        )
+        admin_page = client.get("/admin")
+        create_user = client.post(
+            "/admin/users",
+            data={
+                "username": "viewer",
+                "password": "viewer-secret",
+                "enabled": "on",
+            },
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+        save_settings = client.post(
+            "/admin/settings",
+            data={"app_name": "My Solar", "dashboard_note": "Garage roof"},
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+        client.post("/logout", follow_redirects=False)
+        viewer_login = client.post(
+            "/login",
+            data={"username": "viewer", "password": "viewer-secret"},
+            follow_redirects=False,
+        )
+        viewer_admin = client.get("/admin")
+        dashboard = client.get("/")
+
+    assert admin_page.status_code == 200
+    assert "solar" in admin_page.text
+    assert create_user.status_code == 303
+    assert create_user.headers["location"] == "http://testserver/admin?message=User%20created"
+    assert save_settings.status_code == 303
+    assert viewer_login.status_code == 303
+    assert viewer_admin.status_code == 403
+    assert dashboard.status_code == 200
+    assert "My Solar" in dashboard.text
+    assert "Garage roof" in dashboard.text
 
 
 def test_web_auth_requires_configured_env_vars(tmp_path, monkeypatch) -> None:

@@ -116,6 +116,20 @@ dt,
   padding: 0 12px;
 }
 
+.admin-link {
+  display: inline-grid;
+  min-height: 34px;
+  margin-top: 8px;
+  padding: 0 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 720;
+  text-decoration: none;
+}
+
 .login-body {
   display: grid;
   place-items: center;
@@ -182,6 +196,103 @@ dt,
   background: #fff3f1;
   color: var(--bad);
   font-weight: 700;
+}
+
+.flash {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.flash.ok {
+  border: 1px solid #badfcc;
+  background: #eff9f3;
+  color: var(--accent);
+}
+
+.flash.bad {
+  border: 1px solid #f1b8b2;
+  background: #fff3f1;
+  color: var(--bad);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-panel {
+  padding: 14px;
+}
+
+.admin-form,
+.user-row,
+.user-row form {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-form label span,
+.check-row span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.admin-form input[type="text"],
+.admin-form input[type="password"],
+.user-row input[type="password"] {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.admin-form button,
+.user-row button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 720;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-row {
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, 0.9fr) minmax(220px, 1fr);
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.user-row strong,
+.user-row span {
+  display: block;
+}
+
+.user-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .summary-grid {
@@ -540,6 +651,11 @@ dd {
 
 @media (max-width: 780px) {
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-grid,
+  .user-row {
     grid-template-columns: 1fr;
   }
 

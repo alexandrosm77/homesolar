@@ -11,13 +11,17 @@
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">homesolar</p>
+          <p class="eyebrow">{{ settings.app_name }}</p>
           <h1>{{ "%.0f"|format(view.total_power_w) }} W</h1>
           <p class="updated">Updated {{ view.updated_at.strftime("%H:%M:%S") }}</p>
+          {% if settings.dashboard_note %}
+            <p class="updated">{{ settings.dashboard_note }}</p>
+          {% endif %}
         </div>
         <div class="today">
           <span>today</span>
           <strong>{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
+          <a class="admin-link" href="admin">Admin</a>
           <form method="post" action="logout">
             <button class="logout-btn" type="submit">Logout</button>
           </form>

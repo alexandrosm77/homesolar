@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="static/css/app.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">{{ settings.app_name }}</p>
+          <h1>Admin</h1>
+          <p class="updated">Signed in as {{ current_user.username }}</p>
+        </div>
+        <div class="today">
+          <a class="admin-link" href=".">Dashboard</a>
+          <form method="post" action="logout">
+            <button class="logout-btn" type="submit">Logout</button>
+          </form>
+        </div>
+      </header>
+
+      {% if message %}
+        <p class="flash ok">{{ message }}</p>
+      {% endif %}
+      {% if error %}
+        <p class="flash bad">{{ error }}</p>
+      {% endif %}
+
+      <section class="admin-grid">
+        <section class="panel admin-panel">
+          <div class="panel-head">
+            <h2>App Settings</h2>
+          </div>
+          <form class="admin-form" method="post" action="admin/settings">
+            <label>
+              <span>App name</span>
+              <input name="app_name" type="text" value="{{ settings.app_name }}" required>
+            </label>
+            <label>
+              <span>Dashboard note</span>
+              <input name="dashboard_note" type="text" value="{{ settings.dashboard_note }}">
+            </label>
+            <button type="submit">Save settings</button>
+          </form>
+        </section>
+
+        <section class="panel admin-panel">
+          <div class="panel-head">
+            <h2>Add User</h2>
+          </div>
+          <form class="admin-form" method="post" action="admin/users">
+            <label>
+              <span>Username</span>
+              <input name="username" type="text" autocomplete="username" required>
+            </label>
+            <label>
+              <span>Password</span>
+              <input name="password" type="password" autocomplete="new-password" required>
+            </label>
+            <label class="check-row">
+              <input name="is_admin" type="checkbox">
+              <span>Admin</span>
+            </label>
+            <label class="check-row">
+              <input name="enabled" type="checkbox" checked>
+              <span>Enabled</span>
+            </label>
+            <button type="submit">Create user</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="panel admin-panel">
+        <div class="panel-head">
+          <h2>Users</h2>
+        </div>
+        <div class="user-list">
+          {% for user in users %}
+            <article class="user-row">
+              <div>
+                <strong>{{ user.username }}</strong>
+                <span>
+                  {{ "admin" if user.is_admin else "user" }} ·
+                  {{ "enabled" if user.enabled else "disabled" }}
+                </span>
+              </div>
+              <form method="post" action="admin/users/{{ user.id }}/update">
+                <label class="check-row">
+                  <input name="is_admin" type="checkbox" {{ "checked" if user.is_admin else "" }}>
+                  <span>Admin</span>
+                </label>
+                <label class="check-row">
+                  <input name="enabled" type="checkbox" {{ "checked" if user.enabled else "" }}>
+                  <span>Enabled</span>
+                </label>
+                <button type="submit">Update</button>
+              </form>
+              <form method="post" action="admin/users/{{ user.id }}/password">
+                <input name="password" type="password" autocomplete="new-password" placeholder="New password">
+                <button type="submit">Set password</button>
+              </form>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

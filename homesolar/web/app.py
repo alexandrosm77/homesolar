@@ -10,6 +10,7 @@ import hmac
 import os
 from pathlib import Path
 import secrets
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
@@ -30,6 +31,11 @@ DEFAULT_WEB_USERNAME_ENV = "HOMESOLAR_WEB_USER"
 DEFAULT_WEB_PASSWORD_ENV = "HOMESOLAR_WEB_PASSWORD"
 SESSION_COOKIE_NAME = "homesolar_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+PASSWORD_HASH_ITERATIONS = 210_000
+MANAGED_SETTINGS = {
+    "app_name": "homesolar",
+    "dashboard_note": "",
+}
 templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 
 
@@ -47,6 +53,9 @@ def create_app(config: AppConfig) -> FastAPI:
         with session_factory() as session:
             for inverter in config.inverters:
                 ensure_inverter(session, inverter)
+            if web_credentials is not None:
+                _ensure_bootstrap_admin(session, web_credentials)
+            _ensure_default_settings(session)
             session.commit()
         if config.collector.enabled:
             await collector.start()
@@ -65,12 +74,14 @@ def create_app(config: AppConfig) -> FastAPI:
                 return await call_next(request)
 
             if request.url.path.startswith("/api"):
-                if _request_is_authorized(request, web_credentials):
-                    return await call_next(request)
+                with session_factory() as session:
+                    if _request_is_authorized(session, request, web_credentials):
+                        return await call_next(request)
                 return _auth_challenge()
 
-            if _request_has_valid_session(request, web_credentials):
-                return await call_next(request)
+            with session_factory() as session:
+                if _request_user(session, request, web_credentials):
+                    return await call_next(request)
 
             return RedirectResponse(url=_login_redirect_url(request), status_code=303)
 
@@ -80,18 +91,23 @@ def create_app(config: AppConfig) -> FastAPI:
     def dashboard(request: Request) -> HTMLResponse:
         with session_factory() as session:
             view = _dashboard_view(session)
+            settings = _settings_dict(session)
         return templates.TemplateResponse(
-            request, "dashboard.html", {"view": view, "title": "homesolar"}
+            request,
+            "dashboard.html",
+            {"view": view, "settings": settings, "title": settings["app_name"]},
         )
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
-        if web_credentials is not None and _request_has_valid_session(request, web_credentials):
-            return RedirectResponse(url=".", status_code=303)
+        with session_factory() as session:
+            if web_credentials is not None and _request_user(session, request, web_credentials):
+                return RedirectResponse(url=".", status_code=303)
+            settings = _settings_dict(session)
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"title": "homesolar login", "error": None},
+            {"title": f"{settings['app_name']} login", "settings": settings, "error": None},
         )
 
     @app.post("/login")
@@ -103,20 +119,141 @@ def create_app(config: AppConfig) -> FastAPI:
         if web_credentials is None:
             return RedirectResponse(url=".", status_code=303)
 
-        expected_username, expected_password = web_credentials
-        if secrets.compare_digest(username, expected_username) and secrets.compare_digest(
-            password, expected_password
-        ):
-            response = RedirectResponse(url=".", status_code=303)
-            _set_session_cookie(response, web_credentials)
-            return response
+        with session_factory() as session:
+            user = _authenticate_user(session, username, password, web_credentials)
+            settings = _settings_dict(session)
+            if user is not None:
+                user.last_login_at = datetime.now(UTC)
+                session.commit()
+                response = RedirectResponse(url=".", status_code=303)
+                _set_session_cookie(response, user)
+                return response
 
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"title": "homesolar login", "error": "Invalid username or password"},
+            {
+                "title": f"{settings['app_name']} login",
+                "settings": settings,
+                "error": "Invalid username or password",
+            },
             status_code=401,
         )
+
+    @app.get("/admin", response_class=HTMLResponse)
+    def admin_page(request: Request) -> Response:
+        with session_factory() as session:
+            user = _require_admin(session, request, web_credentials)
+            if isinstance(user, Response):
+                return user
+            users = session.scalars(select(models.AppUser).order_by(models.AppUser.username)).all()
+            settings = _settings_dict(session)
+            return templates.TemplateResponse(
+                request,
+                "admin.html",
+                {
+                    "title": f"{settings['app_name']} admin",
+                    "settings": settings,
+                    "users": users,
+                    "current_user": user,
+                    "message": request.query_params.get("message"),
+                    "error": request.query_params.get("error"),
+                },
+            )
+
+    @app.post("/admin/users")
+    def admin_create_user(
+        request: Request,
+        username: str = Form(default=""),
+        password: str = Form(default=""),
+        is_admin: str | None = Form(default=None),
+        enabled: str | None = Form(default=None),
+    ) -> Response:
+        with session_factory() as session:
+            user = _require_admin(session, request, web_credentials)
+            if isinstance(user, Response):
+                return user
+            clean_username = username.strip()
+            if not clean_username or not password:
+                return _admin_redirect(request, error="Username and password are required")
+            existing = session.scalar(
+                select(models.AppUser).where(models.AppUser.username == clean_username)
+            )
+            if existing is not None:
+                return _admin_redirect(request, error="User already exists")
+            now = datetime.now(UTC)
+            session.add(
+                models.AppUser(
+                    username=clean_username,
+                    password_hash=_hash_password(password),
+                    is_admin=is_admin == "on",
+                    enabled=enabled == "on",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.commit()
+        return _admin_redirect(request, message="User created")
+
+    @app.post("/admin/users/{user_id}/update")
+    def admin_update_user(
+        request: Request,
+        user_id: int,
+        is_admin: str | None = Form(default=None),
+        enabled: str | None = Form(default=None),
+    ) -> Response:
+        with session_factory() as session:
+            current_user = _require_admin(session, request, web_credentials)
+            if isinstance(current_user, Response):
+                return current_user
+            user = session.get(models.AppUser, user_id)
+            if user is None:
+                raise HTTPException(status_code=404, detail="Unknown user")
+            user.is_admin = is_admin == "on"
+            user.enabled = enabled == "on"
+            user.updated_at = datetime.now(UTC)
+            if not _has_enabled_admin(session):
+                session.rollback()
+                return _admin_redirect(
+                    request, error="At least one enabled admin is required"
+                )
+            session.commit()
+        return _admin_redirect(request, message="User updated")
+
+    @app.post("/admin/users/{user_id}/password")
+    def admin_update_user_password(
+        request: Request,
+        user_id: int,
+        password: str = Form(default=""),
+    ) -> Response:
+        with session_factory() as session:
+            current_user = _require_admin(session, request, web_credentials)
+            if isinstance(current_user, Response):
+                return current_user
+            user = session.get(models.AppUser, user_id)
+            if user is None:
+                raise HTTPException(status_code=404, detail="Unknown user")
+            if not password:
+                return _admin_redirect(request, error="Password is required")
+            user.password_hash = _hash_password(password)
+            user.updated_at = datetime.now(UTC)
+            session.commit()
+        return _admin_redirect(request, message="Password updated")
+
+    @app.post("/admin/settings")
+    def admin_update_settings(
+        request: Request,
+        app_name: str = Form(default="homesolar"),
+        dashboard_note: str = Form(default=""),
+    ) -> Response:
+        with session_factory() as session:
+            user = _require_admin(session, request, web_credentials)
+            if isinstance(user, Response):
+                return user
+            _set_setting(session, "app_name", app_name.strip() or "homesolar")
+            _set_setting(session, "dashboard_note", dashboard_note.strip())
+            session.commit()
+        return _admin_redirect(request, message="Settings saved")
 
     @app.post("/logout")
     def logout() -> RedirectResponse:
@@ -296,13 +433,76 @@ def _web_credentials(config: AppConfig) -> tuple[str, str] | None:
     return username, password
 
 
-def _request_is_authorized(request: Request, credentials: tuple[str, str]) -> bool:
-    return _request_has_valid_session(request, credentials) or _request_has_valid_basic_auth(
-        request, credentials
+def _ensure_bootstrap_admin(session: Session, credentials: tuple[str, str]) -> None:
+    username, password = credentials
+    now = datetime.now(UTC)
+    user = session.scalar(select(models.AppUser).where(models.AppUser.username == username))
+    if user is None:
+        session.add(
+            models.AppUser(
+                username=username,
+                password_hash=_hash_password(password),
+                is_admin=True,
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return
+
+    user.is_admin = True
+    user.enabled = True
+    user.updated_at = now
+
+
+def _ensure_default_settings(session: Session) -> None:
+    for key, value in MANAGED_SETTINGS.items():
+        if session.get(models.AppSetting, key) is None:
+            session.add(
+                models.AppSetting(key=key, value=value, updated_at=datetime.now(UTC))
+            )
+
+
+def _request_is_authorized(
+    session: Session, request: Request, credentials: tuple[str, str]
+) -> bool:
+    return _request_user(session, request, credentials) is not None or _request_has_valid_basic_auth(
+        session, request, credentials
     )
 
 
-def _request_has_valid_basic_auth(request: Request, credentials: tuple[str, str]) -> bool:
+def _request_user(
+    session: Session, request: Request, credentials: tuple[str, str]
+) -> models.AppUser | None:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not cookie:
+        return None
+
+    try:
+        user_id_text, issued_at_text, signature = cookie.split(".", 2)
+        user_id = int(user_id_text)
+        issued_at = int(issued_at_text)
+    except ValueError:
+        return None
+
+    now = int(datetime.now(UTC).timestamp())
+    if issued_at > now or now - issued_at > SESSION_MAX_AGE_SECONDS:
+        return None
+
+    user = session.get(models.AppUser, user_id)
+    if user is None or not user.enabled:
+        return None
+
+    expected = _session_signature(str(user.id), issued_at_text, user.password_hash, None)
+    if not secrets.compare_digest(signature, expected):
+        return None
+
+    return user
+
+
+def _request_has_valid_basic_auth(
+    session: Session, request: Request, credentials: tuple[str, str]
+) -> bool:
     header = request.headers.get("Authorization")
     if not header:
         return False
@@ -320,33 +520,33 @@ def _request_has_valid_basic_auth(request: Request, credentials: tuple[str, str]
     if not separator:
         return False
 
+    return _authenticate_user(session, username, password, credentials) is not None
+
+
+def _authenticate_user(
+    session: Session, username: str, password: str, credentials: tuple[str, str]
+) -> models.AppUser | None:
+    clean_username = username.strip()
+    user = session.scalar(select(models.AppUser).where(models.AppUser.username == clean_username))
+    if user is not None and user.enabled and _verify_password(password, user.password_hash):
+        return user
+
     expected_username, expected_password = credentials
-    return secrets.compare_digest(username, expected_username) and secrets.compare_digest(
+    if secrets.compare_digest(clean_username, expected_username) and secrets.compare_digest(
         password, expected_password
-    )
+    ):
+        _ensure_bootstrap_admin(session, credentials)
+        session.flush()
+        return session.scalar(select(models.AppUser).where(models.AppUser.username == clean_username))
+    return None
 
 
-def _request_has_valid_session(request: Request, credentials: tuple[str, str]) -> bool:
-    cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    if not cookie:
-        return False
-
-    try:
-        issued_at_text, signature = cookie.split(".", 1)
-        issued_at = int(issued_at_text)
-    except ValueError:
-        return False
-
-    now = int(datetime.now(UTC).timestamp())
-    if issued_at > now or now - issued_at > SESSION_MAX_AGE_SECONDS:
-        return False
-
-    return secrets.compare_digest(signature, _session_signature(issued_at_text, credentials))
-
-
-def _set_session_cookie(response: Response, credentials: tuple[str, str]) -> None:
+def _set_session_cookie(response: Response, user: models.AppUser) -> None:
     issued_at = str(int(datetime.now(UTC).timestamp()))
-    value = f"{issued_at}.{_session_signature(issued_at, credentials)}"
+    value = (
+        f"{user.id}.{issued_at}."
+        f"{_session_signature(str(user.id), issued_at, user.password_hash, None)}"
+    )
     response.set_cookie(
         SESSION_COOKIE_NAME,
         value,
@@ -358,13 +558,85 @@ def _set_session_cookie(response: Response, credentials: tuple[str, str]) -> Non
     )
 
 
-def _session_signature(issued_at: str, credentials: tuple[str, str]) -> str:
-    username, password = credentials
+def _session_signature(
+    user_id: str,
+    issued_at: str,
+    password_hash: str,
+    credentials: tuple[str, str] | None,
+) -> str:
+    secret = password_hash if credentials is None else f"{password_hash}:{credentials[1]}"
     return hmac.new(
-        password.encode("utf-8"),
-        f"{username}.{issued_at}".encode("utf-8"),
+        secret.encode("utf-8"),
+        f"{user_id}.{issued_at}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    )
+    return (
+        f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}$"
+        f"{base64.urlsafe_b64encode(salt).decode('ascii')}$"
+        f"{base64.urlsafe_b64encode(digest).decode('ascii')}"
+    )
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt_text, digest_text = password_hash.split("$", 3)
+        iterations = int(iterations_text)
+        salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_text.encode("ascii"))
+    except (ValueError, binascii.Error):
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return secrets.compare_digest(actual, expected)
+
+
+def _require_admin(
+    session: Session, request: Request, credentials: tuple[str, str] | None
+) -> models.AppUser | Response:
+    if credentials is None:
+        return RedirectResponse(url=".", status_code=303)
+    user = _request_user(session, request, credentials)
+    if user is None:
+        return RedirectResponse(url=_login_redirect_url(request), status_code=303)
+    if not user.is_admin:
+        return PlainTextResponse("Admin access required", status_code=403)
+    return user
+
+
+def _has_enabled_admin(session: Session) -> bool:
+    return bool(
+        session.scalar(
+            select(models.AppUser.id)
+            .where(models.AppUser.enabled.is_(True))
+            .where(models.AppUser.is_admin.is_(True))
+            .limit(1)
+        )
+    )
+
+
+def _settings_dict(session: Session) -> dict[str, str]:
+    settings = dict(MANAGED_SETTINGS)
+    rows = session.scalars(select(models.AppSetting)).all()
+    settings.update({row.key: row.value for row in rows})
+    return settings
+
+
+def _set_setting(session: Session, key: str, value: str) -> None:
+    setting = session.get(models.AppSetting, key)
+    now = datetime.now(UTC)
+    if setting is None:
+        session.add(models.AppSetting(key=key, value=value, updated_at=now))
+        return
+    setting.value = value
+    setting.updated_at = now
 
 
 def _is_public_path(path: str) -> bool:
@@ -373,6 +645,18 @@ def _is_public_path(path: str) -> bool:
 
 def _login_redirect_url(request: Request) -> str:
     return "login" if request.url.path == "/" else "./login"
+
+
+def _admin_redirect(
+    request: Request, message: str | None = None, error: str | None = None
+) -> RedirectResponse:
+    referer = request.headers.get("referer")
+    target = referer.split("?", 1)[0] if referer else "admin"
+    if message:
+        target = f"{target}?message={quote(message)}"
+    if error:
+        target = f"{target}?error={quote(error)}"
+    return RedirectResponse(url=target, status_code=303)
 
 
 def _auth_challenge() -> PlainTextResponse:
