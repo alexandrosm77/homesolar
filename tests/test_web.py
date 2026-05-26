@@ -350,6 +350,8 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
 
     assert admin_page.status_code == 200
     assert "solar" in admin_page.text
+    assert 'href="/static/css/app.css"' in admin_page.text
+    assert "admin/static/css" not in admin_page.text
     assert create_user.status_code == 303
     assert create_user.headers["location"] == "http://testserver/admin?message=User%20created"
     assert save_settings.status_code == 303
