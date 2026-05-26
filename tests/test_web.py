@@ -362,6 +362,49 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
     assert "Garage roof" in dashboard.text
 
 
+def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    monkeypatch.setenv("HOMESOLAR_WEB_BASE_PATH", "/homesolar")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        login_page = client.get("/login")
+        client.post(
+            "/login",
+            data={"username": "solar", "password": "secret"},
+            follow_redirects=False,
+        )
+        dashboard = client.get("/")
+        admin_page = client.get("/admin")
+
+    assert 'href="/homesolar/static/css/app.css"' in login_page.text
+    assert 'href="/homesolar/static/css/app.css"' in dashboard.text
+    assert 'src="/homesolar/static/js/dashboard.js"' in dashboard.text
+    assert 'href="/homesolar/static/css/app.css"' in admin_page.text
+    assert "admin/static/css" not in admin_page.text
+
+
 def test_web_auth_requires_configured_env_vars(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("HOMESOLAR_WEB_USER", raising=False)
     monkeypatch.delenv("HOMESOLAR_WEB_PASSWORD", raising=False)

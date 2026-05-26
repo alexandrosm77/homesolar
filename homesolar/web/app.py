@@ -29,6 +29,7 @@ from homesolar.db.session import create_schema, engine_from_url, sessionmaker_fr
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_WEB_USERNAME_ENV = "HOMESOLAR_WEB_USER"
 DEFAULT_WEB_PASSWORD_ENV = "HOMESOLAR_WEB_PASSWORD"
+PUBLIC_BASE_PATH_ENV = "HOMESOLAR_WEB_BASE_PATH"
 SESSION_COOKIE_NAME = "homesolar_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 PASSWORD_HASH_ITERATIONS = 210_000
@@ -45,6 +46,7 @@ def create_app(config: AppConfig) -> FastAPI:
     session_factory = sessionmaker_from_engine(engine)
     collector = CollectorService(config, session_factory)
     web_credentials = _web_credentials(config)
+    public_base_path = _public_base_path(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -95,7 +97,12 @@ def create_app(config: AppConfig) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "dashboard.html",
-            {"view": view, "settings": settings, "title": settings["app_name"]},
+            {
+                "view": view,
+                "settings": settings,
+                "title": settings["app_name"],
+                "asset_base_path": public_base_path,
+            },
         )
 
     @app.get("/login", response_class=HTMLResponse)
@@ -107,7 +114,12 @@ def create_app(config: AppConfig) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"title": f"{settings['app_name']} login", "settings": settings, "error": None},
+            {
+                "title": f"{settings['app_name']} login",
+                "settings": settings,
+                "error": None,
+                "asset_base_path": public_base_path,
+            },
         )
 
     @app.post("/login")
@@ -136,6 +148,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 "title": f"{settings['app_name']} login",
                 "settings": settings,
                 "error": "Invalid username or password",
+                "asset_base_path": public_base_path,
             },
             status_code=401,
         )
@@ -158,6 +171,7 @@ def create_app(config: AppConfig) -> FastAPI:
                     "current_user": user,
                     "message": request.query_params.get("message"),
                     "error": request.query_params.get("error"),
+                    "asset_base_path": public_base_path,
                 },
             )
 
@@ -431,6 +445,14 @@ def _web_credentials(config: AppConfig) -> tuple[str, str] | None:
         raise RuntimeError(f"Missing required web auth env var(s): {', '.join(missing)}")
 
     return username, password
+
+
+def _public_base_path(config: AppConfig) -> str:
+    value = os.environ.get(PUBLIC_BASE_PATH_ENV, config.web.base_path)
+    value = value.strip()
+    if not value or value == "/":
+        return ""
+    return f"/{value.strip('/')}"
 
 
 def _ensure_bootstrap_admin(session: Session, credentials: tuple[str, str]) -> None:

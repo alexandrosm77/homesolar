@@ -8,6 +8,8 @@ collector:
 web:
   host: 0.0.0.0
   port: 8000
+  # Set to /homesolar when serving behind a reverse proxy subpath.
+  base_path: ""
   auth:
     type: basic
     username_env: HOMESOLAR_WEB_USER

@@ -47,7 +47,16 @@ class CollectorConfig(BaseModel):
 class WebConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+    base_path: str = ""
     auth: BasicAuthConfig | None = None
+
+    @field_validator("base_path")
+    @classmethod
+    def normalize_base_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value or value == "/":
+            return ""
+        return f"/{value.strip('/')}"
 
 
 class AppConfig(BaseModel):

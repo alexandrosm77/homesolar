@@ -13,6 +13,7 @@ services:
       HOMESOLAR_WEB_PASSWORD: ${HOMESOLAR_WEB_PASSWORD:-}
       REMOTE_INVERTER_USER: ${REMOTE_INVERTER_USER:-}
       REMOTE_INVERTER_PASSWORD: ${REMOTE_INVERTER_PASSWORD:-}
+      HOMESOLAR_WEB_BASE_PATH: ${HOMESOLAR_WEB_BASE_PATH:-}
     volumes:
       - ${HOMESOLAR_CONFIG:-./config/local.yaml}:/config/homesolar.yaml:ro
       - ${HOMESOLAR_DATA_DIR:-./data}:/app/data
