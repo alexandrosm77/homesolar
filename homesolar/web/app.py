@@ -64,11 +64,13 @@ def create_app(config: AppConfig) -> FastAPI:
             if _is_public_path(request.url.path):
                 return await call_next(request)
 
-            if _request_is_authorized(request, web_credentials):
-                return await call_next(request)
-
             if request.url.path.startswith("/api"):
+                if _request_is_authorized(request, web_credentials):
+                    return await call_next(request)
                 return _auth_challenge()
+
+            if _request_has_valid_session(request, web_credentials):
+                return await call_next(request)
 
             return RedirectResponse(url=_login_redirect_url(request), status_code=303)
 
@@ -84,7 +86,7 @@ def create_app(config: AppConfig) -> FastAPI:
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
-        if web_credentials is not None and _request_is_authorized(request, web_credentials):
+        if web_credentials is not None and _request_has_valid_session(request, web_credentials):
             return RedirectResponse(url=".", status_code=303)
         return templates.TemplateResponse(
             request,

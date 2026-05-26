@@ -216,16 +216,17 @@ def test_web_auth_protects_dashboard_and_api_but_not_health(tmp_path, monkeypatc
         health = client.get("/health")
         dashboard = client.get("/", follow_redirects=False)
         api = client.get("/api/inverters")
-        authorized = client.get("/", auth=("solar", "secret"))
+        basic_auth_dashboard = client.get("/", auth=("solar", "secret"), follow_redirects=False)
+        authorized_api = client.get("/api/inverters", auth=("solar", "secret"))
 
     assert health.status_code == 200
     assert dashboard.status_code == 303
     assert dashboard.headers["location"] == "login"
     assert api.status_code == 401
     assert api.headers["WWW-Authenticate"] == 'Basic realm="homesolar"'
-    assert authorized.status_code == 200
-    assert "Test" in authorized.text
-    assert "Logout" in authorized.text
+    assert basic_auth_dashboard.status_code == 303
+    assert basic_auth_dashboard.headers["location"] == "login"
+    assert authorized_api.status_code == 200
 
 
 def test_web_auth_login_and_logout_flow(tmp_path, monkeypatch) -> None:
@@ -330,11 +331,11 @@ def test_default_web_auth_env_vars_enable_auth_without_yaml_config(tmp_path, mon
 
     with TestClient(app) as client:
         anonymous = client.get("/", follow_redirects=False)
-        authorized = client.get("/", auth=("solar", "secret"))
+        authorized_api = client.get("/api/inverters", auth=("solar", "secret"))
 
     assert anonymous.status_code == 303
     assert anonymous.headers["location"] == "login"
-    assert authorized.status_code == 200
+    assert authorized_api.status_code == 200
 
 
 def test_default_web_auth_env_vars_fail_closed_if_partially_configured(
