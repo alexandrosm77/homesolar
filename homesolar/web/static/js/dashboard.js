@@ -1,8 +1,4 @@
 (async function () {
-  if (!window.Chart) {
-    return;
-  }
-
   const powerEl = document.getElementById("todayChart");
   const aggregateEl = document.getElementById("aggregateChart");
   const inverterFilter = document.getElementById("inverterFilter");
@@ -12,13 +8,10 @@
   const componentPanels = Array.from(document.querySelectorAll("[data-component-panel]"));
   const storageKey = "homesolar.dashboard.settings";
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
+  const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
   let selectedRange = "today";
   let powerChart = null;
   let aggregateChart = null;
-
-  if (!powerEl || !aggregateEl) {
-    return;
-  }
 
   function readSettings() {
     try {
@@ -248,17 +241,23 @@
       selectedRange = button.dataset.range || "today";
       syncRangeButtons();
       writeSettings();
-      await refreshDashboard();
+      if (chartsAvailable) {
+        await refreshDashboard();
+      }
     });
   });
 
   inverterFilter?.addEventListener("change", async () => {
     writeSettings();
-    await refreshDashboard();
+    if (chartsAvailable) {
+      await refreshDashboard();
+    }
   });
   aggregatePeriod?.addEventListener("change", async () => {
     writeSettings();
-    await loadAggregateChart();
+    if (chartsAvailable) {
+      await loadAggregateChart();
+    }
   });
   componentPanels.forEach((panel) => {
     panel.addEventListener("toggle", () => {
@@ -267,9 +266,13 @@
   });
   resetDashboard?.addEventListener("click", async () => {
     resetSettings();
-    await refreshDashboard();
+    if (chartsAvailable) {
+      await refreshDashboard();
+    }
   });
 
   restoreSettings();
-  await refreshDashboard();
+  if (chartsAvailable) {
+    await refreshDashboard();
+  }
 })();
