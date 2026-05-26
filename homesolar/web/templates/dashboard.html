@@ -154,7 +154,7 @@
               </dl>
 
               {% if item.components %}
-                <details class="component-details">
+                <details class="component-details" data-component-panel="{{ item.inverter.id }}">
                   <summary>Components</summary>
                   <div class="component-grid">
                     {% for component in item.components %}

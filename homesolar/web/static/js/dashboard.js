@@ -9,6 +9,7 @@
   const aggregatePeriod = document.getElementById("aggregatePeriod");
   const resetDashboard = document.getElementById("resetDashboard");
   const rangeButtons = Array.from(document.querySelectorAll(".range-btn"));
+  const componentPanels = Array.from(document.querySelectorAll("[data-component-panel]"));
   const storageKey = "homesolar.dashboard.settings";
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   let selectedRange = "today";
@@ -34,7 +35,14 @@
         inverterId: inverterFilter?.value || "",
         range: selectedRange,
         aggregatePeriod: aggregatePeriod?.value || "daily",
+        componentPanels: componentPanelSettings(),
       }),
+    );
+  }
+
+  function componentPanelSettings() {
+    return Object.fromEntries(
+      componentPanels.map((panel) => [panel.dataset.componentPanel, panel.open]),
     );
   }
 
@@ -59,6 +67,14 @@
     if (settings.range && rangeButtons.some((button) => button.dataset.range === settings.range)) {
       selectedRange = settings.range;
     }
+    if (settings.componentPanels) {
+      componentPanels.forEach((panel) => {
+        const value = settings.componentPanels[panel.dataset.componentPanel];
+        if (typeof value === "boolean") {
+          panel.open = value;
+        }
+      });
+    }
     syncRangeButtons();
   }
 
@@ -77,6 +93,9 @@
     if (aggregatePeriod) {
       aggregatePeriod.value = "daily";
     }
+    componentPanels.forEach((panel) => {
+      panel.open = false;
+    });
     syncRangeButtons();
   }
 
@@ -240,6 +259,11 @@
   aggregatePeriod?.addEventListener("change", async () => {
     writeSettings();
     await loadAggregateChart();
+  });
+  componentPanels.forEach((panel) => {
+    panel.addEventListener("toggle", () => {
+      writeSettings();
+    });
   });
   resetDashboard?.addEventListener("click", async () => {
     resetSettings();
