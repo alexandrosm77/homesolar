@@ -192,22 +192,63 @@ def _store_interval(session: Session, inverter_id: str, current: models.Reading)
 def _calculate_delta(
     previous: models.Reading, current: models.Reading
 ) -> tuple[float | None, str | None, str, str | None]:
-    if previous.energy_lifetime_kwh is not None and current.energy_lifetime_kwh is not None:
-        delta = current.energy_lifetime_kwh - previous.energy_lifetime_kwh
-        if delta >= 0:
-            return round(delta, 6), "lifetime", "normal", None
-        return None, "lifetime", "counter_reset_or_invalid", "lifetime counter went backwards"
-
     if previous.energy_today_kwh is not None and current.energy_today_kwh is not None:
-        delta = current.energy_today_kwh - previous.energy_today_kwh
-        if delta >= 0:
-            return round(delta, 6), "daily", "normal", None
-        return None, "daily", "counter_reset_or_invalid", "daily counter went backwards"
+        return _counter_delta(previous, current, "daily")
+
+    if previous.energy_lifetime_kwh is not None and current.energy_lifetime_kwh is not None:
+        return _counter_delta(previous, current, "lifetime")
 
     if previous.energy_session_kwh is not None and current.energy_session_kwh is not None:
-        delta = current.energy_session_kwh - previous.energy_session_kwh
-        if delta >= 0:
-            return round(delta, 6), "session", "normal", None
-        return None, "session", "counter_reset_or_invalid", "session counter went backwards"
+        return _counter_delta(previous, current, "session")
 
     return None, None, "missing_counter", "no comparable cumulative counter"
+
+
+def _counter_delta(
+    previous: models.Reading, current: models.Reading, source: str
+) -> tuple[float | None, str, str, str | None]:
+    previous_value = getattr(previous, f"energy_{_counter_field(source)}_kwh")
+    current_value = getattr(current, f"energy_{_counter_field(source)}_kwh")
+    delta = current_value - previous_value
+    if delta < 0:
+        return None, source, "counter_reset_or_invalid", f"{source} counter went backwards"
+
+    generated = round(delta, 6)
+    plausible, note = _is_plausible_delta(previous, current, generated)
+    if not plausible:
+        return None, source, "implausible_delta", note
+    return generated, source, "normal", None
+
+
+def _counter_field(source: str) -> str:
+    return "today" if source == "daily" else source
+
+
+def _is_plausible_delta(
+    previous: models.Reading, current: models.Reading, generated_kwh: float
+) -> tuple[bool, str | None]:
+    if generated_kwh <= 0:
+        return True, None
+
+    elapsed_hours = (_as_utc(current.observed_at) - _as_utc(previous.observed_at)).total_seconds() / 3600
+    if elapsed_hours <= 0:
+        return True, None
+
+    powers = [
+        power
+        for power in (previous.current_power_w, current.current_power_w)
+        if power is not None and power >= 0
+    ]
+    if not powers:
+        return True, None
+
+    max_expected_kwh = max(powers) / 1000 * elapsed_hours
+    allowed_kwh = max(0.25, max_expected_kwh * 6)
+    if generated_kwh <= allowed_kwh:
+        return True, None
+
+    return (
+        False,
+        f"delta {generated_kwh:.3f} kWh exceeds plausible {allowed_kwh:.3f} kWh "
+        f"for {elapsed_hours:.2f} h interval",
+    )

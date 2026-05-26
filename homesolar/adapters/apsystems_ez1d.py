@@ -51,41 +51,7 @@ class APsystemsEZ1DAdapter(InverterAdapter):
     async def fetch_live(self) -> AdapterResult:
         payload, raw = await self._get_json("/getOutputData", "live")
         observed_at = datetime.now(UTC)
-        data = payload.get("data") or {}
-
-        p1 = _float_or_none(data.get("p1"))
-        p2 = _float_or_none(data.get("p2"))
-        e1 = _float_or_none(data.get("e1"))
-        e2 = _float_or_none(data.get("e2"))
-        te1 = _float_or_none(data.get("te1"))
-        te2 = _float_or_none(data.get("te2"))
-
-        components = [
-            ComponentReading(
-                component_type="channel",
-                component_name="channel_1",
-                power_w=p1,
-                energy_session_kwh=e1,
-                energy_lifetime_kwh=te1,
-            ),
-            ComponentReading(
-                component_type="channel",
-                component_name="channel_2",
-                power_w=p2,
-                energy_session_kwh=e2,
-                energy_lifetime_kwh=te2,
-            ),
-        ]
-
-        reading = NormalizedReading(
-            observed_at=observed_at,
-            current_power_w=sum(v for v in [p1, p2] if v is not None),
-            energy_session_kwh=sum(v for v in [e1, e2] if v is not None),
-            energy_lifetime_kwh=sum(v for v in [te1, te2] if v is not None),
-            status=payload.get("message"),
-            components=components,
-            extra={"device_id": payload.get("deviceId"), "source": "getOutputData"},
-        )
+        reading = parse_output_data(payload, observed_at)
         return AdapterResult(raw=raw, reading=reading)
 
     async def fetch_alarm(self) -> AdapterResult | None:
@@ -121,3 +87,41 @@ class APsystemsEZ1DAdapter(InverterAdapter):
             extra={"ssid": data.get("ssid"), "raw_data": data},
         )
         return AdapterResult(raw=raw, info=info)
+
+
+def parse_output_data(payload: dict[str, Any], observed_at: datetime) -> NormalizedReading:
+    data = payload.get("data") or {}
+
+    p1 = _float_or_none(data.get("p1"))
+    p2 = _float_or_none(data.get("p2"))
+    e1 = _float_or_none(data.get("e1"))
+    e2 = _float_or_none(data.get("e2"))
+    te1 = _float_or_none(data.get("te1"))
+    te2 = _float_or_none(data.get("te2"))
+
+    components = [
+        ComponentReading(
+            component_type="channel",
+            component_name="channel_1",
+            power_w=p1,
+            energy_today_kwh=e1,
+            energy_lifetime_kwh=te1,
+        ),
+        ComponentReading(
+            component_type="channel",
+            component_name="channel_2",
+            power_w=p2,
+            energy_today_kwh=e2,
+            energy_lifetime_kwh=te2,
+        ),
+    ]
+
+    return NormalizedReading(
+        observed_at=observed_at,
+        current_power_w=sum(v for v in [p1, p2] if v is not None),
+        energy_today_kwh=sum(v for v in [e1, e2] if v is not None),
+        energy_lifetime_kwh=sum(v for v in [te1, te2] if v is not None),
+        status=payload.get("message"),
+        components=components,
+        extra={"device_id": payload.get("deviceId"), "source": "getOutputData"},
+    )
