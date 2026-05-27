@@ -350,6 +350,8 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
 
     assert admin_page.status_code == 200
     assert "solar" in admin_page.text
+    assert 'href="/static/favicon.svg"' in admin_page.text
+    assert 'src="/static/logo.svg"' in admin_page.text
     assert 'href="/static/css/app.css"' in admin_page.text
     assert "admin/static/css" not in admin_page.text
     assert create_user.status_code == 303
@@ -399,6 +401,9 @@ def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
         admin_page = client.get("/admin")
 
     assert 'href="/homesolar/static/css/app.css"' in login_page.text
+    assert 'src="/homesolar/static/logo.svg"' in login_page.text
+    assert 'href="/homesolar/static/favicon.svg"' in dashboard.text
+    assert 'src="/homesolar/static/logo.svg"' in dashboard.text
     assert 'href="/homesolar/static/css/app.css"' in dashboard.text
     assert 'src="/homesolar/static/js/dashboard.js"' in dashboard.text
     assert 'data-api-base-path="/homesolar"' in dashboard.text

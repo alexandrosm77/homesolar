@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
+    <link rel="icon" href="{{ asset_base_path }}/static/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   </head>
@@ -11,7 +12,10 @@
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">{{ settings.app_name }}</p>
+          <div class="brand">
+            <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg" alt="" width="40" height="40">
+            <p class="eyebrow">{{ settings.app_name }}</p>
+          </div>
           <h1>{{ "%.0f"|format(view.total_power_w) }} W</h1>
           <p class="updated">Updated {{ view.updated_at.strftime("%H:%M:%S") }}</p>
           {% if settings.dashboard_note %}
