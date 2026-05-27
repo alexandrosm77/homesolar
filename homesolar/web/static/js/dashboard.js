@@ -14,6 +14,7 @@
   let selectedRange = "today";
   let powerChart = null;
   let aggregateChart = null;
+  const componentCharts = new Map();
 
   function readSettings() {
     try {
@@ -31,6 +32,7 @@
         range: selectedRange,
         aggregatePeriod: aggregatePeriod?.value || "daily",
         componentPanels: componentPanelSettings(),
+        componentMetrics: componentMetricSettings(),
       }),
     );
   }
@@ -38,6 +40,12 @@
   function componentPanelSettings() {
     return Object.fromEntries(
       componentPanels.map((panel) => [panel.dataset.componentPanel, panel.open]),
+    );
+  }
+
+  function componentMetricSettings() {
+    return Object.fromEntries(
+      componentPanels.map((panel) => [panel.dataset.componentPanel, selectedComponentMetric(panel)]),
     );
   }
 
@@ -67,6 +75,15 @@
         const value = settings.componentPanels[panel.dataset.componentPanel];
         if (typeof value === "boolean") {
           panel.open = value;
+        }
+      });
+    }
+    if (settings.componentMetrics) {
+      componentPanels.forEach((panel) => {
+        const value = settings.componentMetrics[panel.dataset.componentPanel];
+        const button = value ? panel.querySelector(`[data-component-metric="${value}"]`) : null;
+        if (button) {
+          setComponentMetric(panel, value);
         }
       });
     }
@@ -118,6 +135,32 @@
     return `${apiBasePath}${path}?${params}`;
   }
 
+  function pointRadius() {
+    return selectedRange === "today" || selectedRange === "24h" ? 0 : 1.5;
+  }
+
+  function selectedComponentMetric(panel) {
+    return (
+      panel.querySelector("[data-component-metric].active")?.dataset.componentMetric || "power_w"
+    );
+  }
+
+  function setComponentMetric(panel, metric) {
+    panel.querySelectorAll("[data-component-metric]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.componentMetric === metric);
+    });
+  }
+
+  function syncComponentMetricControls(panel, payload) {
+    const available = new Set(payload.available_metrics.map((item) => item.metric));
+    panel.querySelectorAll("[data-component-metric]").forEach((button) => {
+      const isAvailable = available.has(button.dataset.componentMetric);
+      button.hidden = !isAvailable;
+      button.disabled = !isAvailable;
+      button.classList.toggle("active", button.dataset.componentMetric === payload.metric);
+    });
+  }
+
   async function loadPowerChart() {
     const params = inverterParams();
     params.set("range", selectedRange);
@@ -130,7 +173,7 @@
       borderColor: palette[index % palette.length],
       backgroundColor: palette[index % palette.length],
       tension: 0.25,
-      pointRadius: selectedRange === "today" || selectedRange === "24h" ? 0 : 1.5,
+      pointRadius: pointRadius(),
       borderWidth: 2,
     }));
 
@@ -170,6 +213,84 @@
         },
       },
     });
+  }
+
+  async function loadComponentChart(panel) {
+    const inverterId = panel.dataset.componentPanel;
+    const canvas = panel.querySelector("[data-component-chart]");
+    if (!inverterId || !canvas) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("inverter_id", inverterId);
+    params.set("range", selectedRange);
+    params.set("metric", selectedComponentMetric(panel));
+    const response = await fetch(apiUrl("/api/chart/components", params));
+    const payload = await response.json();
+    syncComponentMetricControls(panel, payload);
+    const datasets = payload.series.map((series, index) => ({
+      label: series.name,
+      data: series.points.map((point) => ({ x: Date.parse(point.x), y: point.y })),
+      borderColor: palette[index % palette.length],
+      backgroundColor: palette[index % palette.length],
+      tension: 0.25,
+      pointRadius: pointRadius(),
+      borderWidth: 2,
+    }));
+    const status = panel.querySelector("[data-component-chart-status]");
+    if (status) {
+      const pointCount = payload.series.reduce((sum, series) => sum + series.points.length, 0);
+      status.textContent = pointCount ? payload.unit : `no ${payload.label.toLowerCase()} data`;
+    }
+    const title = panel.querySelector("[data-component-chart-title]");
+    if (title) {
+      title.textContent = `Component ${payload.label}`;
+    }
+
+    const existing = componentCharts.get(inverterId);
+    if (existing) {
+      existing.data.datasets = datasets;
+      existing.options.scales.y.ticks.callback = (value) => `${value} ${payload.unit}`;
+      existing.update();
+      return;
+    }
+
+    const chart = new Chart(canvas, {
+      type: "line",
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        scales: {
+          x: {
+            type: "linear",
+            ticks: {
+              maxTicksLimit: 5,
+              callback: (value) => formatTime(value),
+            },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { callback: (value) => `${value} ${payload.unit}` },
+          },
+        },
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: {
+            callbacks: {
+              title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
+            },
+          },
+        },
+      },
+    });
+    componentCharts.set(inverterId, chart);
+  }
+
+  async function loadOpenComponentCharts() {
+    await Promise.all(componentPanels.filter((panel) => panel.open).map(loadComponentChart));
   }
 
   async function loadSummary() {
@@ -242,7 +363,12 @@
   }
 
   async function refreshDashboard() {
-    await Promise.all([loadPowerChart(), loadSummary(), loadAggregateChart()]);
+    await Promise.all([
+      loadPowerChart(),
+      loadSummary(),
+      loadAggregateChart(),
+      loadOpenComponentCharts(),
+    ]);
   }
 
   rangeButtons.forEach((button) => {
@@ -269,8 +395,20 @@
     }
   });
   componentPanels.forEach((panel) => {
-    panel.addEventListener("toggle", () => {
+    panel.addEventListener("toggle", async () => {
       writeSettings();
+      if (chartsAvailable && panel.open) {
+        await loadComponentChart(panel);
+      }
+    });
+    panel.querySelectorAll("[data-component-metric]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        setComponentMetric(panel, button.dataset.componentMetric || "power_w");
+        writeSettings();
+        if (chartsAvailable) {
+          await loadComponentChart(panel);
+        }
+      });
     });
   });
   resetDashboard?.addEventListener("click", async () => {

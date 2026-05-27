@@ -37,6 +37,12 @@ MANAGED_SETTINGS = {
     "app_name": "homesolar",
     "dashboard_note": "",
 }
+COMPONENT_CHART_METRICS = {
+    "power_w": {"label": "Power", "unit": "W"},
+    "voltage_v": {"label": "Voltage", "unit": "V"},
+    "current_a": {"label": "Current", "unit": "A"},
+    "energy_today_kwh": {"label": "Energy", "unit": "kWh"},
+}
 templates = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 
 
@@ -398,6 +404,17 @@ def create_app(config: AppConfig) -> FastAPI:
         inverter_id: str | None = None,
     ) -> dict:
         return _power_chart(session_factory, range_name=range_name, inverter_id=inverter_id)
+
+    @app.get("/api/chart/components")
+    def chart_components(
+        inverter_id: str,
+        range_name: str = Query(default="today", alias="range"),
+        metric: str = Query(default="power_w"),
+    ) -> dict:
+        with session_factory() as session:
+            return _component_chart(
+                session, range_name=range_name, inverter_id=inverter_id, metric=metric
+            )
 
     @app.get("/api/aggregates")
     def aggregates(
@@ -771,6 +788,64 @@ def _power_chart(session_factory, range_name: str, inverter_id: str | None) -> d
                 }
             )
         return {"range": range_name, "series": series}
+
+
+def _component_chart(session: Session, range_name: str, inverter_id: str, metric: str) -> dict:
+    inverter = session.get(models.Inverter, inverter_id)
+    if inverter is None:
+        raise HTTPException(status_code=404, detail="Unknown inverter")
+
+    start = _range_start_utc(range_name, [inverter])
+    rows = session.scalars(
+        select(models.ComponentReading)
+        .where(models.ComponentReading.inverter_id == inverter_id)
+        .where(models.ComponentReading.observed_at >= start)
+        .order_by(
+            models.ComponentReading.component_type,
+            models.ComponentReading.component_name,
+            models.ComponentReading.observed_at,
+        )
+    ).all()
+
+    available_metrics = [
+        {"metric": key, "label": meta["label"], "unit": meta["unit"]}
+        for key, meta in COMPONENT_CHART_METRICS.items()
+        if any(getattr(row, key) is not None for row in rows)
+    ]
+    available_metric_keys = {item["metric"] for item in available_metrics}
+    if metric not in available_metric_keys:
+        metric = available_metrics[0]["metric"] if available_metrics else "power_w"
+
+    by_component: dict[tuple[str, str], list[models.ComponentReading]] = defaultdict(list)
+    for row in rows:
+        if getattr(row, metric) is not None:
+            by_component[(row.component_type, row.component_name)].append(row)
+
+    metric_meta = COMPONENT_CHART_METRICS[metric]
+
+    return {
+        "range": range_name,
+        "inverter_id": inverter.id,
+        "metric": metric,
+        "label": metric_meta["label"],
+        "unit": metric_meta["unit"],
+        "available_metrics": available_metrics,
+        "series": [
+            {
+                "component_type": component_type,
+                "component_name": component_name,
+                "name": component_name.replace("_", " ").title(),
+                "points": [
+                    {
+                        "x": _as_utc(row.observed_at).isoformat(),
+                        "y": getattr(row, metric),
+                    }
+                    for row in component_rows
+                ],
+            }
+            for (component_type, component_name), component_rows in by_component.items()
+        ],
+    }
 
 
 def _summary_for_range(session: Session, range_name: str, inverter_id: str | None) -> dict:

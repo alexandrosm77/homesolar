@@ -162,6 +162,54 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
             )
             session.add_all([first, second])
             session.flush()
+            session.add_all(
+                [
+                    models.ComponentReading(
+                        inverter_id="one",
+                        observed_at=first.observed_at,
+                        reading_id=first.id,
+                        component_type="channel",
+                        component_name="channel_1",
+                        power_w=400,
+                        voltage_v=32,
+                        current_a=12.5,
+                        energy_today_kwh=0.4,
+                    ),
+                    models.ComponentReading(
+                        inverter_id="one",
+                        observed_at=first.observed_at,
+                        reading_id=first.id,
+                        component_type="channel",
+                        component_name="channel_2",
+                        power_w=600,
+                        voltage_v=34,
+                        current_a=17.6,
+                        energy_today_kwh=0.6,
+                    ),
+                    models.ComponentReading(
+                        inverter_id="one",
+                        observed_at=second.observed_at,
+                        reading_id=second.id,
+                        component_type="channel",
+                        component_name="channel_1",
+                        power_w=650,
+                        voltage_v=33,
+                        current_a=19.7,
+                        energy_today_kwh=0.55,
+                    ),
+                    models.ComponentReading(
+                        inverter_id="one",
+                        observed_at=second.observed_at,
+                        reading_id=second.id,
+                        component_type="channel",
+                        component_name="channel_2",
+                        power_w=850,
+                        voltage_v=35,
+                        current_a=24.3,
+                        energy_today_kwh=0.7,
+                    ),
+                ]
+            )
             session.add(
                 models.EnergyInterval(
                     inverter_id="one",
@@ -177,15 +225,37 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
             session.commit()
 
         power = client.get("/api/chart/power?range=24h&inverter_id=one")
+        components = client.get("/api/chart/components?range=24h&inverter_id=one")
+        component_voltage = client.get(
+            "/api/chart/components?range=24h&inverter_id=one&metric=voltage_v"
+        )
         summary = client.get("/api/summary?range=today&inverter_id=one")
         aggregates = client.get("/api/aggregates?period=daily&inverter_id=one&limit=2")
+        dashboard = client.get("/")
 
     assert power.status_code == 200
     assert power.json()["series"][0]["points"][-1]["y"] == 1500
+    assert components.status_code == 200
+    assert components.json()["series"][0]["name"] == "Channel 1"
+    assert components.json()["series"][0]["points"][-1]["y"] == 650
+    assert components.json()["series"][1]["points"][-1]["y"] == 850
+    assert components.json()["available_metrics"] == [
+        {"metric": "power_w", "label": "Power", "unit": "W"},
+        {"metric": "voltage_v", "label": "Voltage", "unit": "V"},
+        {"metric": "current_a", "label": "Current", "unit": "A"},
+        {"metric": "energy_today_kwh", "label": "Energy", "unit": "kWh"},
+    ]
+    assert component_voltage.status_code == 200
+    assert component_voltage.json()["metric"] == "voltage_v"
+    assert component_voltage.json()["unit"] == "V"
+    assert component_voltage.json()["series"][0]["points"][-1]["y"] == 33
     assert summary.status_code == 200
     assert summary.json()["total_kwh"] == 1.25
     assert aggregates.status_code == 200
     assert aggregates.json()["series"][0]["data"][-1] == 1.25
+    assert dashboard.status_code == 200
+    assert 'data-component-chart="one"' in dashboard.text
+    assert 'data-component-metric="voltage_v"' in dashboard.text
 
 
 def test_web_auth_protects_dashboard_and_api_but_not_health(tmp_path, monkeypatch) -> None:

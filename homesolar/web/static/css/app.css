@@ -608,6 +608,75 @@ dd {
   font-weight: 700;
 }
 
+.component-chart-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.component-chart-head {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.component-chart-head h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.component-chart-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.component-metric-toggle {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 4px;
+}
+
+.component-metric-toggle button {
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.component-metric-toggle button.active {
+  border-color: var(--accent);
+  background: #e7f3ed;
+  color: var(--accent);
+}
+
+.component-metric-toggle button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.component-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 170px;
+  min-height: 170px;
+}
+
+.component-chart-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .events-panel {
   margin-top: 12px;
   padding: 14px;
@@ -723,6 +792,20 @@ dd {
 
   .component-values {
     justify-content: flex-start;
+  }
+
+  .component-chart-wrap {
+    height: 190px;
+    min-height: 190px;
+  }
+
+  .component-chart-head {
+    grid-template-columns: 1fr;
+  }
+
+  .component-metric-toggle {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .event-row {

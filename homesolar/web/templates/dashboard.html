@@ -188,6 +188,21 @@
                       </div>
                     {% endfor %}
                   </div>
+                  <div class="component-chart-block">
+                    <div class="component-chart-head">
+                      <h3 data-component-chart-title>Component Power</h3>
+                      <div class="component-metric-toggle" role="group" aria-label="Component chart metric">
+                        <button class="active" type="button" data-component-metric="power_w">Power</button>
+                        <button type="button" data-component-metric="voltage_v">Voltage</button>
+                        <button type="button" data-component-metric="current_a">Current</button>
+                        <button type="button" data-component-metric="energy_today_kwh">Energy</button>
+                      </div>
+                      <span data-component-chart-status>W</span>
+                    </div>
+                    <div class="component-chart-wrap">
+                      <canvas data-component-chart="{{ item.inverter.id }}"></canvas>
+                    </div>
+                  </div>
                 </details>
               {% endif %}
             </article>
