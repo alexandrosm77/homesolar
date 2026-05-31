@@ -6,11 +6,22 @@ from homesolar.config import (
     BasicAuthConfig,
     CollectorConfig,
     DatabaseConfig,
+    EmailConfig,
     InverterConfig,
     WebConfig,
 )
 from homesolar.db import models
 from homesolar.web.app import create_app
+
+
+def _yesterday_reading(timezone: str) -> tuple:
+    from datetime import UTC, datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(timezone)
+    yesterday = (datetime.now(tz) - timedelta(days=1)).date()
+    observed = datetime.combine(yesterday, time(12, 0), tzinfo=tz).astimezone(UTC)
+    return observed, yesterday.isoformat()
 
 
 def test_health_endpoint_with_collector_disabled(tmp_path) -> None:
@@ -669,3 +680,162 @@ def test_default_web_auth_env_vars_fail_closed_if_partially_configured(
 
     with pytest.raises(RuntimeError, match="HOMESOLAR_WEB_PASSWORD"):
         create_app(config)
+
+
+def _reporting_config(tmp_path, email_enabled: bool = True) -> AppConfig:
+    return AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        email=EmailConfig(enabled=email_enabled, host="localhost"),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(id="test", name="Test", type="kostal_html", base_url="http://example.test")
+        ],
+    )
+
+
+def test_admin_persists_report_preferences(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    app = create_app(_reporting_config(tmp_path))
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        client.post("/login", data={"username": "solar", "password": "secret"}, follow_redirects=False)
+        client.post(
+            "/admin/users",
+            data={
+                "username": "reporter",
+                "password": "reporter-secret",
+                "enabled": "on",
+                "email": "reporter@example.test",
+                "reports_enabled": "on",
+                "report_language": "el",
+                "report_inverter_ids": ["test", "ghost"],
+            },
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+        with app.state.session_factory() as session:
+            user = session.scalar(select(models.AppUser).where(models.AppUser.username == "reporter"))
+            assert user.email == "reporter@example.test"
+            assert user.reports_enabled is True
+            assert user.report_language == "el"
+            assert user.report_inverter_ids == ["test"]
+
+
+def test_send_test_report_emails_user(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+
+    captured: dict = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            captured["host"] = host
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def send_message(self, message):
+            captured["message"] = message
+
+    monkeypatch.setattr("homesolar.reports.email.smtplib.SMTP", FakeSMTP)
+    app = create_app(_reporting_config(tmp_path))
+
+    from fastapi.testclient import TestClient
+
+    observed, _ = _yesterday_reading("Europe/London")
+    with TestClient(app) as client:
+        with app.state.session_factory() as session:
+            session.add(
+                models.Reading(
+                    inverter_id="test",
+                    observed_at=observed,
+                    current_power_w=2000,
+                    energy_today_kwh=12.5,
+                    energy_lifetime_kwh=500.0,
+                    energy_session_kwh=None,
+                    status="ok",
+                    extra={},
+                )
+            )
+            session.commit()
+            solar_id = session.scalar(
+                select(models.AppUser.id).where(models.AppUser.username == "solar")
+            )
+
+        client.post("/login", data={"username": "solar", "password": "secret"}, follow_redirects=False)
+        client.post(
+            f"/admin/users/{solar_id}/update",
+            data={
+                "is_admin": "on",
+                "enabled": "on",
+                "email": "solar@example.test",
+                "reports_enabled": "on",
+                "report_language": "en",
+                "report_inverter_ids": ["test"],
+            },
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+        response = client.post(
+            f"/admin/users/{solar_id}/send-test-report",
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert "message=" in response.headers["location"]
+    message = captured["message"]
+    assert message["To"] == "solar@example.test"
+    assert "Solar report" in message["Subject"]
+    assert any(part.get_content_type() == "image/png" for part in message.walk())
+
+
+def test_report_due_logic(tmp_path, monkeypatch) -> None:
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from homesolar.reports.scheduler import report_due
+
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    app = create_app(_reporting_config(tmp_path))
+
+    from fastapi.testclient import TestClient
+
+    london = ZoneInfo("Europe/London")
+    morning = datetime(2026, 1, 2, 8, 0, tzinfo=london).astimezone(UTC)
+    pre_dawn = datetime(2026, 1, 2, 3, 0, tzinfo=london).astimezone(UTC)
+
+    with TestClient(app):
+        with app.state.session_factory() as session:
+            user = models.AppUser(
+                username="r",
+                password_hash="x",
+                is_admin=False,
+                enabled=True,
+                created_at=morning,
+                updated_at=morning,
+                email="r@example.test",
+                reports_enabled=True,
+                report_inverter_ids=["test"],
+            )
+            session.add(user)
+            session.commit()
+
+            assert report_due(session, user, 5, morning) is True
+            assert report_due(session, user, 5, pre_dawn) is False
+
+            user.last_report_sent_at = morning
+            assert report_due(session, user, 5, morning) is False

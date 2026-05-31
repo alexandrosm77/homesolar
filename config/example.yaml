@@ -5,6 +5,16 @@ collector:
   enabled: true
   request_timeout_seconds: 10
 
+email:
+  # Daily per-user solar reports via a local SMTP relay (no auth, no TLS).
+  enabled: false
+  host: 192.168.0.5
+  port: 25
+  use_tls: false
+  from_address: alexandrosm77@gmail.com
+  # Local hour (in each report's inverter timezone) to send the daily report.
+  send_hour_local: 5
+
 web:
   host: 0.0.0.0
   port: 8000

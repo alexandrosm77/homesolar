@@ -25,6 +25,8 @@ from homesolar.collector.scheduler import CollectorService
 from homesolar.config import AppConfig
 from homesolar.db import models
 from homesolar.db.session import create_schema, engine_from_url, sessionmaker_from_engine
+from homesolar.reports.render import build_user_report, send_user_report
+from homesolar.reports.scheduler import ReportScheduler
 from homesolar.web.i18n import (
     LANGUAGE_COOKIE_MAX_AGE,
     LANGUAGE_COOKIE_NAME,
@@ -59,6 +61,7 @@ def create_app(config: AppConfig) -> FastAPI:
     create_schema(engine)
     session_factory = sessionmaker_from_engine(engine)
     collector = CollectorService(config, session_factory)
+    report_scheduler = ReportScheduler(config, session_factory)
     web_credentials = _web_credentials(config)
     public_base_path = _public_base_path(config)
 
@@ -75,9 +78,11 @@ def create_app(config: AppConfig) -> FastAPI:
             session.commit()
         if config.collector.enabled:
             await collector.start()
+        await report_scheduler.start()
         try:
             yield
         finally:
+            await report_scheduler.stop()
             await collector.stop()
 
     app = FastAPI(title="homesolar", version="0.1.0", lifespan=lifespan)
@@ -201,6 +206,9 @@ def create_app(config: AppConfig) -> FastAPI:
             t = get_translations(lang)
             _persist_user_language(session, user, request)
             users = session.scalars(select(models.AppUser).order_by(models.AppUser.username)).all()
+            inverters = session.scalars(
+                select(models.Inverter).order_by(models.Inverter.name)
+            ).all()
             settings = _settings_dict(session)
             response = templates.TemplateResponse(
                 request,
@@ -209,6 +217,8 @@ def create_app(config: AppConfig) -> FastAPI:
                     "title": f"{settings['app_name']} {t['title_admin_suffix']}",
                     "settings": settings,
                     "users": users,
+                    "inverters": inverters,
+                    "email_enabled": config.email.enabled,
                     "current_user": user,
                     "message": request.query_params.get("message"),
                     "error": request.query_params.get("error"),
@@ -228,6 +238,10 @@ def create_app(config: AppConfig) -> FastAPI:
         is_admin: str | None = Form(default=None),
         enabled: str | None = Form(default=None),
         language: str | None = Form(default=None),
+        email: str = Form(default=""),
+        reports_enabled: str | None = Form(default=None),
+        report_language: str | None = Form(default=None),
+        report_inverter_ids: list[str] = Form(default=[]),
     ) -> Response:
         t = get_translations(resolve_language(request))
         with session_factory() as session:
@@ -250,6 +264,10 @@ def create_app(config: AppConfig) -> FastAPI:
                     is_admin=is_admin == "on",
                     enabled=enabled == "on",
                     language=_clean_user_language(language),
+                    email=_clean_email(email),
+                    reports_enabled=reports_enabled == "on",
+                    report_language=_clean_user_language(report_language),
+                    report_inverter_ids=_clean_report_inverter_ids(session, report_inverter_ids),
                     created_at=now,
                     updated_at=now,
                 )
@@ -264,6 +282,10 @@ def create_app(config: AppConfig) -> FastAPI:
         is_admin: str | None = Form(default=None),
         enabled: str | None = Form(default=None),
         language: str | None = Form(default=None),
+        email: str = Form(default=""),
+        reports_enabled: str | None = Form(default=None),
+        report_language: str | None = Form(default=None),
+        report_inverter_ids: list[str] = Form(default=[]),
     ) -> Response:
         t = get_translations(resolve_language(request))
         with session_factory() as session:
@@ -276,6 +298,10 @@ def create_app(config: AppConfig) -> FastAPI:
             user.is_admin = is_admin == "on"
             user.enabled = enabled == "on"
             user.language = _clean_user_language(language)
+            user.email = _clean_email(email)
+            user.reports_enabled = reports_enabled == "on"
+            user.report_language = _clean_user_language(report_language)
+            user.report_inverter_ids = _clean_report_inverter_ids(session, report_inverter_ids)
             user.updated_at = datetime.now(UTC)
             if not _has_enabled_admin(session):
                 session.rollback()
@@ -305,6 +331,30 @@ def create_app(config: AppConfig) -> FastAPI:
             user.updated_at = datetime.now(UTC)
             session.commit()
         return _admin_redirect(request, message=t["msg_password_updated"])
+
+    @app.post("/admin/users/{user_id}/send-test-report")
+    def admin_send_test_report(request: Request, user_id: int) -> Response:
+        t = get_translations(resolve_language(request))
+        if not config.email.enabled:
+            return _admin_redirect(request, error=t["err_email_disabled"])
+        with session_factory() as session:
+            current_user = _require_admin(session, request, web_credentials)
+            if isinstance(current_user, Response):
+                return current_user
+            user = session.get(models.AppUser, user_id)
+            if user is None:
+                raise HTTPException(status_code=404, detail="Unknown user")
+            app_name = _settings_dict(session)["app_name"]
+            report = build_user_report(session, user, app_name)
+            if report is None:
+                return _admin_redirect(request, error=t["err_report_not_configured"])
+            try:
+                send_user_report(config.email, report)
+            except Exception as exc:  # surface SMTP errors to the admin
+                return _admin_redirect(
+                    request, error=t["err_report_failed"].format(error=exc)
+                )
+        return _admin_redirect(request, message=t["msg_test_report_sent"])
 
     @app.post("/admin/settings")
     def admin_update_settings(
@@ -533,6 +583,22 @@ def _apply_language_cookie(request: Request, response: Response, lang: str) -> R
 
 def _clean_user_language(value: str | None) -> str | None:
     return value if value in SUPPORTED_LANGUAGES else None
+
+
+def _clean_email(value: str) -> str | None:
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _clean_report_inverter_ids(session: Session, values: list[str]) -> list[str]:
+    if not values:
+        return []
+    known = set(session.scalars(select(models.Inverter.id)).all())
+    seen: list[str] = []
+    for value in values:
+        if value in known and value not in seen:
+            seen.append(value)
+    return seen
 
 
 def _user_language(user: models.AppUser | None) -> str | None:
