@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,21 +15,26 @@
             <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg" alt="" width="40" height="40">
             <p class="eyebrow">{{ settings.app_name }}</p>
           </div>
-          <h1>Sign in</h1>
-          <p class="login-copy">Solar production, collector health, and inverter events.</p>
+          <h1>{{ t.sign_in }}</h1>
+          <p class="login-copy">{{ t.login_copy }}</p>
         </div>
         {% if error %}
           <p class="login-error">{{ error }}</p>
         {% endif %}
         <label>
-          <span>Username</span>
+          <span>{{ t.username }}</span>
           <input name="username" type="text" autocomplete="username" required autofocus>
         </label>
         <label>
-          <span>Password</span>
+          <span>{{ t.password }}</span>
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
-        <button type="submit">Login</button>
+        <button type="submit">{{ t.login }}</button>
+        <nav class="lang-switch" aria-label="Language">
+          {% for code, name in languages.items() %}
+            <a class="{{ 'active' if lang == code else '' }}" href="?lang={{ code }}">{{ name }}</a>
+          {% endfor %}
+        </nav>
       </form>
     </main>
   </body>

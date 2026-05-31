@@ -115,6 +115,36 @@ dt,
   margin-top: 8px;
 }
 
+.lang-switch {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.lang-switch a {
+  min-width: 34px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 720;
+  text-align: center;
+  text-decoration: none;
+}
+
+.lang-switch a.active {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.login-panel .lang-switch {
+  justify-content: center;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
 .logout-btn,
 .login-panel button {
   min-height: 38px;

@@ -63,6 +63,44 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
     assert 'id="resetDashboard"' in response.text
 
 
+def test_dashboard_and_login_render_in_greek(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        english = client.get("/")
+        dashboard = client.get("/?lang=el")
+        login = client.get("/login?lang=el")
+        cookie_dashboard = client.get("/")
+
+    assert english.status_code == 200
+    assert '<html lang="en">' in english.text
+    assert "Energy Aggregates" in english.text
+
+    assert dashboard.status_code == 200
+    assert '<html lang="el">' in dashboard.text
+    assert "Συγκεντρωτικά Ενέργειας" in dashboard.text
+    assert "homesolar_lang=el" in dashboard.headers.get("set-cookie", "")
+
+    assert login.status_code == 200
+    assert "Σύνδεση" in login.text
+
+    assert '<html lang="el">' in cookie_dashboard.text
+
+
 def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> None:
     config = AppConfig(
         database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
@@ -420,6 +458,8 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
 
     assert admin_page.status_code == 200
     assert "solar" in admin_page.text
+    assert "<built-in method" not in admin_page.text
+    assert ">Update</button>" in admin_page.text
     assert 'href="/static/favicon.svg"' in admin_page.text
     assert 'src="/static/logo.svg"' in admin_page.text
     assert 'href="/static/css/app.css"' in admin_page.text
@@ -432,6 +472,79 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
     assert dashboard.status_code == 200
     assert "My Solar" in dashboard.text
     assert "Garage roof" in dashboard.text
+
+
+def test_per_user_language_preference(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOMESOLAR_WEB_USER", "solar")
+    monkeypatch.setenv("HOMESOLAR_WEB_PASSWORD", "secret")
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        web=WebConfig(
+            auth=BasicAuthConfig(
+                username_env="HOMESOLAR_WEB_USER",
+                password_env="HOMESOLAR_WEB_PASSWORD",
+            )
+        ),
+        inverters=[
+            InverterConfig(
+                id="test",
+                name="Test",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        client.post(
+            "/login",
+            data={"username": "solar", "password": "secret"},
+            follow_redirects=False,
+        )
+        client.post(
+            "/admin/users",
+            data={
+                "username": "greek",
+                "password": "greek-secret",
+                "enabled": "on",
+                "language": "el",
+            },
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+
+        with app.state.session_factory() as session:
+            greek_user = session.scalar(
+                select(models.AppUser).where(models.AppUser.username == "greek")
+            )
+            assert greek_user is not None
+            assert greek_user.language == "el"
+            solar_id = session.scalar(
+                select(models.AppUser.id).where(models.AppUser.username == "solar")
+            )
+
+        client.post(
+            f"/admin/users/{solar_id}/update",
+            data={"is_admin": "on", "enabled": "on", "language": "el"},
+            headers={"referer": "http://testserver/admin"},
+            follow_redirects=False,
+        )
+
+        # No lang param or cookie: the stored preference drives the language.
+        preference_dashboard = client.get("/")
+        # Switching via ?lang persists the new choice for the logged-in user.
+        client.get("/?lang=en")
+
+        with app.state.session_factory() as session:
+            solar = session.get(models.AppUser, solar_id)
+            assert solar.language == "en"
+
+    assert preference_dashboard.status_code == 200
+    assert '<html lang="el">' in preference_dashboard.text
 
 
 def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:

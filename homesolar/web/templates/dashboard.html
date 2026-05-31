@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,80 +17,85 @@
             <p class="eyebrow">{{ settings.app_name }}</p>
           </div>
           <h1>{{ "%.0f"|format(view.total_power_w) }} W</h1>
-          <p class="updated">Updated {{ view.updated_at.strftime("%H:%M:%S") }}</p>
+          <p class="updated">{{ t.updated }} {{ view.updated_at.strftime("%H:%M:%S") }}</p>
           {% if settings.dashboard_note %}
             <p class="updated">{{ settings.dashboard_note }}</p>
           {% endif %}
         </div>
         <div class="today">
-          <span>today</span>
+          <nav class="lang-switch" aria-label="Language">
+            {% for code, name in languages.items() %}
+              <a class="{{ 'active' if lang == code else '' }}" href="?lang={{ code }}">{{ name }}</a>
+            {% endfor %}
+          </nav>
+          <span>{{ t.today_label }}</span>
           <strong>{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
-          <a class="admin-link" href="admin">Admin</a>
+          <a class="admin-link" href="admin">{{ t.admin_link }}</a>
           <form method="post" action="logout">
-            <button class="logout-btn" type="submit">Logout</button>
+            <button class="logout-btn" type="submit">{{ t.logout }}</button>
           </form>
         </div>
       </header>
 
       <section class="summary-grid">
         <div class="summary-item">
-          <span>sources</span>
+          <span>{{ t.sources }}</span>
           <strong>{{ view.online_count }}/{{ view.inverters|length }}</strong>
         </div>
         <div class="summary-item">
-          <span>alarms</span>
+          <span>{{ t.alarms }}</span>
           <strong>{{ view.alarm_count }}</strong>
         </div>
         <div class="summary-item">
-          <span>poll errors</span>
+          <span>{{ t.poll_errors }}</span>
           <strong>{{ view.poll_error_count }}</strong>
         </div>
       </section>
 
       <section class="control-panel">
         <label>
-          <span>Inverter</span>
+          <span>{{ t.inverter }}</span>
           <select id="inverterFilter">
-            <option value="">All inverters</option>
+            <option value="">{{ t.all_inverters }}</option>
             {% for item in view.inverters %}
               <option value="{{ item.inverter.id }}">{{ item.inverter.name }}</option>
             {% endfor %}
           </select>
         </label>
         <div class="segmented" role="group" aria-label="Power range">
-          <button class="range-btn active" type="button" data-range="today">Today</button>
-          <button class="range-btn" type="button" data-range="24h">24h</button>
-          <button class="range-btn" type="button" data-range="7d">7d</button>
-          <button class="range-btn" type="button" data-range="30d">30d</button>
-          <button class="range-btn" type="button" data-range="365d">Year</button>
+          <button class="range-btn active" type="button" data-range="today">{{ t.range_today }}</button>
+          <button class="range-btn" type="button" data-range="24h">{{ t.range_24h }}</button>
+          <button class="range-btn" type="button" data-range="7d">{{ t.range_7d }}</button>
+          <button class="range-btn" type="button" data-range="30d">{{ t.range_30d }}</button>
+          <button class="range-btn" type="button" data-range="365d">{{ t.range_year }}</button>
         </div>
         <label>
-          <span>Aggregate</span>
+          <span>{{ t.aggregate }}</span>
           <select id="aggregatePeriod">
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
+            <option value="daily">{{ t.daily }}</option>
+            <option value="weekly">{{ t.weekly }}</option>
+            <option value="monthly">{{ t.monthly }}</option>
+            <option value="yearly">{{ t.yearly }}</option>
           </select>
         </label>
-        <button class="reset-btn" id="resetDashboard" type="button">Reset</button>
+        <button class="reset-btn" id="resetDashboard" type="button">{{ t.reset }}</button>
       </section>
 
       <section class="range-summary" id="rangeSummary">
         <div>
-          <span>selected energy</span>
+          <span>{{ t.selected_energy }}</span>
           <strong data-summary="total">--</strong>
         </div>
         <div>
-          <span>peak power</span>
+          <span>{{ t.peak_power }}</span>
           <strong data-summary="peak">--</strong>
         </div>
         <div>
-          <span>average power</span>
+          <span>{{ t.average_power }}</span>
           <strong data-summary="average">--</strong>
         </div>
         <div>
-          <span>samples</span>
+          <span>{{ t.samples }}</span>
           <strong data-summary="samples">--</strong>
         </div>
       </section>
@@ -98,7 +103,7 @@
       <section class="dashboard-grid">
         <section class="panel chart-panel">
           <div class="panel-head">
-            <h2>Power</h2>
+            <h2>{{ t.power }}</h2>
             <span id="powerChartTotal">{{ "%.2f"|format(view.total_today_kwh) }} kWh</span>
           </div>
           <div class="chart-wrap">
@@ -120,7 +125,7 @@
                       <span class="status-dot"></span>{{ item.state_label[0] }}
                     </span>
                   </div>
-                  <p>{{ latest.status if latest and latest.status else "No reading yet" }}</p>
+                  <p>{{ latest.status if latest and latest.status else t.no_reading_yet }}</p>
                 </div>
                 <div class="power">
                   {% if latest and latest.current_power_w is not none %}
@@ -133,7 +138,7 @@
 
               <dl class="metrics">
                 <div>
-                  <dt>today</dt>
+                  <dt>{{ t.today_label }}</dt>
                   <dd>
                     {% if item.today_kwh is not none %}
                       {{ "%.2f"|format(item.today_kwh) }} kWh
@@ -143,30 +148,30 @@
                   </dd>
                 </div>
                 <div>
-                  <dt>last reading</dt>
+                  <dt>{{ t.last_reading }}</dt>
                   <dd>{{ item.age_label }}</dd>
                 </div>
                 <div>
-                  <dt>last seen</dt>
+                  <dt>{{ t.last_seen }}</dt>
                   <dd>{{ item.seen_age_label }}</dd>
                 </div>
                 <div>
-                  <dt>poll</dt>
+                  <dt>{{ t.poll }}</dt>
                   <dd class="{{ 'ok' if last_poll and last_poll.success else 'bad' }}">
-                    {{ "ok" if last_poll and last_poll.success else "waiting" }}
+                    {{ t.ok if last_poll and last_poll.success else t.waiting }}
                   </dd>
                 </div>
                 <div>
-                  <dt>alarm</dt>
+                  <dt>{{ t.alarm }}</dt>
                   <dd class="{{ 'bad' if alarm and alarm.status != 'normal' else 'ok' }}">
-                    {{ alarm.status if alarm else "n/a" }}
+                    {{ alarm.status if alarm else t.na }}
                   </dd>
                 </div>
               </dl>
 
               {% if item.components %}
                 <details class="component-details" data-component-panel="{{ item.inverter.id }}">
-                  <summary>Components</summary>
+                  <summary>{{ t.components }}</summary>
                   <div class="component-grid">
                     {% for component in item.components %}
                       <div class="component-row">
@@ -190,12 +195,12 @@
                   </div>
                   <div class="component-chart-block">
                     <div class="component-chart-head">
-                      <h3 data-component-chart-title>Component Power</h3>
+                      <h3 data-component-chart-title>{{ t.component_chart_title.format(label=t.metric_power) }}</h3>
                       <div class="component-metric-toggle" role="group" aria-label="Component chart metric">
-                        <button class="active" type="button" data-component-metric="power_w">Power</button>
-                        <button type="button" data-component-metric="voltage_v">Voltage</button>
-                        <button type="button" data-component-metric="current_a">Current</button>
-                        <button type="button" data-component-metric="energy_today_kwh">Energy</button>
+                        <button class="active" type="button" data-component-metric="power_w">{{ t.metric_power }}</button>
+                        <button type="button" data-component-metric="voltage_v">{{ t.metric_voltage }}</button>
+                        <button type="button" data-component-metric="current_a">{{ t.metric_current }}</button>
+                        <button type="button" data-component-metric="energy_today_kwh">{{ t.metric_energy }}</button>
                       </div>
                       <span data-component-chart-status>W</span>
                     </div>
@@ -212,7 +217,7 @@
 
       <section class="panel aggregate-panel">
         <div class="panel-head">
-          <h2>Energy Aggregates</h2>
+          <h2>{{ t.energy_aggregates }}</h2>
           <span id="aggregateTotal">--</span>
         </div>
         <div class="chart-wrap aggregate-chart-wrap">
@@ -222,8 +227,8 @@
           <table class="aggregate-table">
             <thead>
               <tr>
-                <th>Period</th>
-                <th>Total</th>
+                <th>{{ t.period }}</th>
+                <th>{{ t.total }}</th>
               </tr>
             </thead>
             <tbody id="aggregateRows"></tbody>
@@ -233,7 +238,7 @@
 
       <section class="events-panel">
         <div class="panel-head">
-          <h2>Recent Polls</h2>
+          <h2>{{ t.recent_polls }}</h2>
         </div>
         <div class="event-list">
           {% for event in view.recent_events %}
@@ -241,13 +246,14 @@
               <span class="status-dot {{ 'ok' if event.success else 'bad' }}"></span>
               <span>{{ event.inverter_id }}</span>
               <span>{{ event.kind }}</span>
-              <strong>{{ "ok" if event.success else "failed" }}</strong>
+              <strong>{{ t.ok if event.success else t.failed }}</strong>
               <time>{{ event.started_at[11:19] }}</time>
             </div>
           {% endfor %}
         </div>
       </section>
     </main>
+    <script>window.HOMESOLAR_I18N = {{ js_i18n | tojson }};</script>
     <script src="{{ asset_base_path }}/static/js/dashboard.js"></script>
   </body>
 </html>

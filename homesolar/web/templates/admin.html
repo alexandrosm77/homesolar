@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,13 +15,18 @@
             <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg" alt="" width="40" height="40">
             <p class="eyebrow">{{ settings.app_name }}</p>
           </div>
-          <h1>Admin</h1>
-          <p class="updated">Signed in as {{ current_user.username }}</p>
+          <h1>{{ t.admin }}</h1>
+          <p class="updated">{{ t.signed_in_as.format(user=current_user.username) }}</p>
         </div>
         <div class="today">
-          <a class="admin-link" href=".">Dashboard</a>
+          <nav class="lang-switch" aria-label="Language">
+            {% for code, name in languages.items() %}
+              <a class="{{ 'active' if lang == code else '' }}" href="?lang={{ code }}">{{ name }}</a>
+            {% endfor %}
+          </nav>
+          <a class="admin-link" href=".">{{ t.dashboard_link }}</a>
           <form method="post" action="logout">
-            <button class="logout-btn" type="submit">Logout</button>
+            <button class="logout-btn" type="submit">{{ t.logout }}</button>
           </form>
         </div>
       </header>
@@ -36,50 +41,58 @@
       <section class="admin-grid">
         <section class="panel admin-panel">
           <div class="panel-head">
-            <h2>App Settings</h2>
+            <h2>{{ t.app_settings }}</h2>
           </div>
           <form class="admin-form" method="post" action="admin/settings">
             <label>
-              <span>App name</span>
+              <span>{{ t.app_name_label }}</span>
               <input name="app_name" type="text" value="{{ settings.app_name }}" required>
             </label>
             <label>
-              <span>Dashboard note</span>
+              <span>{{ t.dashboard_note_label }}</span>
               <input name="dashboard_note" type="text" value="{{ settings.dashboard_note }}">
             </label>
-            <button type="submit">Save settings</button>
+            <button type="submit">{{ t.save_settings }}</button>
           </form>
         </section>
 
         <section class="panel admin-panel">
           <div class="panel-head">
-            <h2>Add User</h2>
+            <h2>{{ t.add_user }}</h2>
           </div>
           <form class="admin-form" method="post" action="admin/users">
             <label>
-              <span>Username</span>
+              <span>{{ t.username }}</span>
               <input name="username" type="text" autocomplete="username" required>
             </label>
             <label>
-              <span>Password</span>
+              <span>{{ t.password }}</span>
               <input name="password" type="password" autocomplete="new-password" required>
             </label>
             <label class="check-row">
               <input name="is_admin" type="checkbox">
-              <span>Admin</span>
+              <span>{{ t.admin_checkbox }}</span>
             </label>
             <label class="check-row">
               <input name="enabled" type="checkbox" checked>
-              <span>Enabled</span>
+              <span>{{ t.enabled_label }}</span>
             </label>
-            <button type="submit">Create user</button>
+            <label>
+              <span>{{ t.language_label }}</span>
+              <select name="language">
+                <option value="">{{ t.language_auto }}</option>
+                <option value="en">{{ t.language_en }}</option>
+                <option value="el">{{ t.language_el }}</option>
+              </select>
+            </label>
+            <button type="submit">{{ t.create_user }}</button>
           </form>
         </section>
       </section>
 
       <section class="panel admin-panel">
         <div class="panel-head">
-          <h2>Users</h2>
+          <h2>{{ t.users }}</h2>
         </div>
         <div class="user-list">
           {% for user in users %}
@@ -87,24 +100,32 @@
               <div>
                 <strong>{{ user.username }}</strong>
                 <span>
-                  {{ "admin" if user.is_admin else "user" }} ·
-                  {{ "enabled" if user.enabled else "disabled" }}
+                  {{ t.admin_role if user.is_admin else t.user_role }} ·
+                  {{ t.enabled_state if user.enabled else t.disabled_state }}
                 </span>
               </div>
               <form method="post" action="admin/users/{{ user.id }}/update">
                 <label class="check-row">
                   <input name="is_admin" type="checkbox" {{ "checked" if user.is_admin else "" }}>
-                  <span>Admin</span>
+                  <span>{{ t.admin_checkbox }}</span>
                 </label>
                 <label class="check-row">
                   <input name="enabled" type="checkbox" {{ "checked" if user.enabled else "" }}>
-                  <span>Enabled</span>
+                  <span>{{ t.enabled_label }}</span>
                 </label>
-                <button type="submit">Update</button>
+                <label>
+                  <span>{{ t.language_label }}</span>
+                  <select name="language">
+                    <option value="" {{ "selected" if not user.language else "" }}>{{ t.language_auto }}</option>
+                    <option value="en" {{ "selected" if user.language == "en" else "" }}>{{ t.language_en }}</option>
+                    <option value="el" {{ "selected" if user.language == "el" else "" }}>{{ t.language_el }}</option>
+                  </select>
+                </label>
+                <button type="submit">{{ t["update"] }}</button>
               </form>
               <form method="post" action="admin/users/{{ user.id }}/password">
-                <input name="password" type="password" autocomplete="new-password" placeholder="New password">
-                <button type="submit">Set password</button>
+                <input name="password" type="password" autocomplete="new-password" placeholder="{{ t.new_password }}">
+                <button type="submit">{{ t.set_password }}</button>
               </form>
             </article>
           {% endfor %}

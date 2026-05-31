@@ -11,6 +11,7 @@
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
   const apiBasePath = document.body.dataset.apiBasePath || "";
+  const i18n = window.HOMESOLAR_I18N || {};
   let selectedRange = "today";
   let powerChart = null;
   let aggregateChart = null;
@@ -238,14 +239,22 @@
       pointRadius: pointRadius(),
       borderWidth: 2,
     }));
+    const metricLabel = (i18n.metric_labels && i18n.metric_labels[payload.metric]) || payload.label;
     const status = panel.querySelector("[data-component-chart-status]");
     if (status) {
       const pointCount = payload.series.reduce((sum, series) => sum + series.points.length, 0);
-      status.textContent = pointCount ? payload.unit : `no ${payload.label.toLowerCase()} data`;
+      const noData = (i18n.component_no_data || "no {label} data").replace(
+        "{label}",
+        metricLabel.toLowerCase(),
+      );
+      status.textContent = pointCount ? payload.unit : noData;
     }
     const title = panel.querySelector("[data-component-chart-title]");
     if (title) {
-      title.textContent = `Component ${payload.label}`;
+      title.textContent = (i18n.component_chart_title || "Component {label}").replace(
+        "{label}",
+        metricLabel,
+      );
     }
 
     const existing = componentCharts.get(inverterId);

@@ -25,6 +25,14 @@ from homesolar.collector.scheduler import CollectorService
 from homesolar.config import AppConfig
 from homesolar.db import models
 from homesolar.db.session import create_schema, engine_from_url, sessionmaker_from_engine
+from homesolar.web.i18n import (
+    LANGUAGE_COOKIE_MAX_AGE,
+    LANGUAGE_COOKIE_NAME,
+    LANGUAGE_NAMES,
+    SUPPORTED_LANGUAGES,
+    get_translations,
+    resolve_language,
+)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_WEB_USERNAME_ENV = "HOMESOLAR_WEB_USER"
@@ -98,9 +106,17 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request) -> HTMLResponse:
         with session_factory() as session:
-            view = _dashboard_view(session)
+            user = (
+                _request_user(session, request, web_credentials)
+                if web_credentials is not None
+                else None
+            )
+            lang = resolve_language(request, _user_language(user))
+            t = get_translations(lang)
+            _persist_user_language(session, user, request)
+            view = _dashboard_view(session, t)
             settings = _settings_dict(session)
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "dashboard.html",
             {
@@ -108,25 +124,36 @@ def create_app(config: AppConfig) -> FastAPI:
                 "settings": settings,
                 "title": settings["app_name"],
                 "asset_base_path": public_base_path,
+                "t": t,
+                "lang": lang,
+                "languages": LANGUAGE_NAMES,
+                "js_i18n": _js_i18n(t),
             },
         )
+        return _apply_language_cookie(request, response, lang)
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
+        lang = resolve_language(request)
+        t = get_translations(lang)
         with session_factory() as session:
             if web_credentials is not None and _request_user(session, request, web_credentials):
                 return RedirectResponse(url=".", status_code=303)
             settings = _settings_dict(session)
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "login.html",
             {
-                "title": f"{settings['app_name']} login",
+                "title": f"{settings['app_name']} {t['title_login_suffix']}",
                 "settings": settings,
                 "error": None,
                 "asset_base_path": public_base_path,
+                "t": t,
+                "lang": lang,
+                "languages": LANGUAGE_NAMES,
             },
         )
+        return _apply_language_cookie(request, response, lang)
 
     @app.post("/login")
     async def login(
@@ -137,6 +164,8 @@ def create_app(config: AppConfig) -> FastAPI:
         if web_credentials is None:
             return RedirectResponse(url=".", status_code=303)
 
+        lang = resolve_language(request)
+        t = get_translations(lang)
         with session_factory() as session:
             user = _authenticate_user(session, username, password, web_credentials)
             settings = _settings_dict(session)
@@ -151,10 +180,13 @@ def create_app(config: AppConfig) -> FastAPI:
             request,
             "login.html",
             {
-                "title": f"{settings['app_name']} login",
+                "title": f"{settings['app_name']} {t['title_login_suffix']}",
                 "settings": settings,
-                "error": "Invalid username or password",
+                "error": t["invalid_credentials"],
                 "asset_base_path": public_base_path,
+                "t": t,
+                "lang": lang,
+                "languages": LANGUAGE_NAMES,
             },
             status_code=401,
         )
@@ -165,21 +197,28 @@ def create_app(config: AppConfig) -> FastAPI:
             user = _require_admin(session, request, web_credentials)
             if isinstance(user, Response):
                 return user
+            lang = resolve_language(request, _user_language(user))
+            t = get_translations(lang)
+            _persist_user_language(session, user, request)
             users = session.scalars(select(models.AppUser).order_by(models.AppUser.username)).all()
             settings = _settings_dict(session)
-            return templates.TemplateResponse(
+            response = templates.TemplateResponse(
                 request,
                 "admin.html",
                 {
-                    "title": f"{settings['app_name']} admin",
+                    "title": f"{settings['app_name']} {t['title_admin_suffix']}",
                     "settings": settings,
                     "users": users,
                     "current_user": user,
                     "message": request.query_params.get("message"),
                     "error": request.query_params.get("error"),
                     "asset_base_path": public_base_path,
+                    "t": t,
+                    "lang": lang,
+                    "languages": LANGUAGE_NAMES,
                 },
             )
+            return _apply_language_cookie(request, response, lang)
 
     @app.post("/admin/users")
     def admin_create_user(
@@ -188,19 +227,21 @@ def create_app(config: AppConfig) -> FastAPI:
         password: str = Form(default=""),
         is_admin: str | None = Form(default=None),
         enabled: str | None = Form(default=None),
+        language: str | None = Form(default=None),
     ) -> Response:
+        t = get_translations(resolve_language(request))
         with session_factory() as session:
             user = _require_admin(session, request, web_credentials)
             if isinstance(user, Response):
                 return user
             clean_username = username.strip()
             if not clean_username or not password:
-                return _admin_redirect(request, error="Username and password are required")
+                return _admin_redirect(request, error=t["err_username_password_required"])
             existing = session.scalar(
                 select(models.AppUser).where(models.AppUser.username == clean_username)
             )
             if existing is not None:
-                return _admin_redirect(request, error="User already exists")
+                return _admin_redirect(request, error=t["err_user_exists"])
             now = datetime.now(UTC)
             session.add(
                 models.AppUser(
@@ -208,12 +249,13 @@ def create_app(config: AppConfig) -> FastAPI:
                     password_hash=_hash_password(password),
                     is_admin=is_admin == "on",
                     enabled=enabled == "on",
+                    language=_clean_user_language(language),
                     created_at=now,
                     updated_at=now,
                 )
             )
             session.commit()
-        return _admin_redirect(request, message="User created")
+        return _admin_redirect(request, message=t["msg_user_created"])
 
     @app.post("/admin/users/{user_id}/update")
     def admin_update_user(
@@ -221,7 +263,9 @@ def create_app(config: AppConfig) -> FastAPI:
         user_id: int,
         is_admin: str | None = Form(default=None),
         enabled: str | None = Form(default=None),
+        language: str | None = Form(default=None),
     ) -> Response:
+        t = get_translations(resolve_language(request))
         with session_factory() as session:
             current_user = _require_admin(session, request, web_credentials)
             if isinstance(current_user, Response):
@@ -231,14 +275,15 @@ def create_app(config: AppConfig) -> FastAPI:
                 raise HTTPException(status_code=404, detail="Unknown user")
             user.is_admin = is_admin == "on"
             user.enabled = enabled == "on"
+            user.language = _clean_user_language(language)
             user.updated_at = datetime.now(UTC)
             if not _has_enabled_admin(session):
                 session.rollback()
                 return _admin_redirect(
-                    request, error="At least one enabled admin is required"
+                    request, error=t["err_enabled_admin_required"]
                 )
             session.commit()
-        return _admin_redirect(request, message="User updated")
+        return _admin_redirect(request, message=t["msg_user_updated"])
 
     @app.post("/admin/users/{user_id}/password")
     def admin_update_user_password(
@@ -246,6 +291,7 @@ def create_app(config: AppConfig) -> FastAPI:
         user_id: int,
         password: str = Form(default=""),
     ) -> Response:
+        t = get_translations(resolve_language(request))
         with session_factory() as session:
             current_user = _require_admin(session, request, web_credentials)
             if isinstance(current_user, Response):
@@ -254,11 +300,11 @@ def create_app(config: AppConfig) -> FastAPI:
             if user is None:
                 raise HTTPException(status_code=404, detail="Unknown user")
             if not password:
-                return _admin_redirect(request, error="Password is required")
+                return _admin_redirect(request, error=t["err_password_required"])
             user.password_hash = _hash_password(password)
             user.updated_at = datetime.now(UTC)
             session.commit()
-        return _admin_redirect(request, message="Password updated")
+        return _admin_redirect(request, message=t["msg_password_updated"])
 
     @app.post("/admin/settings")
     def admin_update_settings(
@@ -266,6 +312,7 @@ def create_app(config: AppConfig) -> FastAPI:
         app_name: str = Form(default="homesolar"),
         dashboard_note: str = Form(default=""),
     ) -> Response:
+        t = get_translations(resolve_language(request))
         with session_factory() as session:
             user = _require_admin(session, request, web_credentials)
             if isinstance(user, Response):
@@ -273,7 +320,7 @@ def create_app(config: AppConfig) -> FastAPI:
             _set_setting(session, "app_name", app_name.strip() or "homesolar")
             _set_setting(session, "dashboard_note", dashboard_note.strip())
             session.commit()
-        return _admin_redirect(request, message="Settings saved")
+        return _admin_redirect(request, message=t["msg_settings_saved"])
 
     @app.post("/logout")
     def logout() -> RedirectResponse:
@@ -470,6 +517,51 @@ def _public_base_path(config: AppConfig) -> str:
     if not value or value == "/":
         return ""
     return f"/{value.strip('/')}"
+
+
+def _apply_language_cookie(request: Request, response: Response, lang: str) -> Response:
+    if request.query_params.get("lang") in SUPPORTED_LANGUAGES:
+        response.set_cookie(
+            LANGUAGE_COOKIE_NAME,
+            lang,
+            max_age=LANGUAGE_COOKIE_MAX_AGE,
+            samesite="lax",
+            path="/",
+        )
+    return response
+
+
+def _clean_user_language(value: str | None) -> str | None:
+    return value if value in SUPPORTED_LANGUAGES else None
+
+
+def _user_language(user: models.AppUser | None) -> str | None:
+    return user.language if user is not None else None
+
+
+def _persist_user_language(
+    session: Session, user: models.AppUser | None, request: Request
+) -> None:
+    if user is None:
+        return
+    param = request.query_params.get("lang")
+    if param in SUPPORTED_LANGUAGES and user.language != param:
+        user.language = param
+        user.updated_at = datetime.now(UTC)
+        session.commit()
+
+
+def _js_i18n(t: dict[str, str]) -> dict:
+    return {
+        "metric_labels": {
+            "power_w": t["metric_power"],
+            "voltage_v": t["metric_voltage"],
+            "current_a": t["metric_current"],
+            "energy_today_kwh": t["metric_energy"],
+        },
+        "component_chart_title": t["component_chart_title"],
+        "component_no_data": t["component_no_data"],
+    }
 
 
 def _ensure_bootstrap_admin(session: Session, credentials: tuple[str, str]) -> None:
@@ -706,7 +798,7 @@ def _auth_challenge() -> PlainTextResponse:
     )
 
 
-def _dashboard_view(session: Session) -> dict:
+def _dashboard_view(session: Session, t: dict[str, str]) -> dict:
     inverters = session.scalars(select(models.Inverter).order_by(models.Inverter.name)).all()
     items = []
     total_power = 0.0
@@ -743,10 +835,10 @@ def _dashboard_view(session: Session) -> dict:
                 "last_poll": _poll_event_dict(last_poll) if last_poll else None,
                 "latest_alarm": alarm,
                 "components": components,
-                "age_label": _duration_label(age_seconds),
-                "seen_age_label": _duration_label(seen_age_seconds),
+                "age_label": _duration_label(age_seconds, t),
+                "seen_age_label": _duration_label(seen_age_seconds, t),
                 "is_online": is_online,
-                "state_label": _state_label(is_online, last_poll, alarm),
+                "state_label": _state_label(is_online, last_poll, alarm, t),
             }
         )
     return {
@@ -1141,28 +1233,28 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _duration_label(seconds: int | None) -> str:
+def _duration_label(seconds: int | None, t: dict[str, str]) -> str:
     if seconds is None:
-        return "never"
+        return t["never"]
     if seconds < 60:
-        return f"{seconds}s ago"
+        return t["secs_ago"].format(n=seconds)
     minutes = seconds // 60
     if minutes < 60:
-        return f"{minutes}m ago"
+        return t["mins_ago"].format(n=minutes)
     hours = minutes // 60
-    return f"{hours}h ago"
+    return t["hours_ago"].format(n=hours)
 
 
 def _state_label(
-    is_online: bool, last_poll: models.PollEvent | None, alarm: dict | None
+    is_online: bool, last_poll: models.PollEvent | None, alarm: dict | None, t: dict[str, str]
 ) -> tuple[str, str]:
     if alarm and alarm["status"] != "normal":
-        return ("alarm", "bad")
+        return (t["state_alarm"], "bad")
     if last_poll and not last_poll.success:
-        return ("poll error", "bad")
+        return (t["state_poll_error"], "bad")
     if is_online:
-        return ("online", "ok")
-    return ("waiting", "warn")
+        return (t["state_online"], "ok")
+    return (t["state_waiting"], "warn")
 
 
 def _interval_dict(interval: models.EnergyInterval) -> dict:
