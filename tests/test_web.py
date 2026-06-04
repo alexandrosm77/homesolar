@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from homesolar import __version__
 from homesolar.config import (
     AppConfig,
     BasicAuthConfig,
@@ -48,6 +49,8 @@ def test_health_endpoint_with_collector_disabled(tmp_path) -> None:
 
     from fastapi.testclient import TestClient
 
+    assert app.version == __version__
+
     with TestClient(app) as client:
         response = client.get("/health")
 
@@ -76,6 +79,7 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert "Test" in response.text
     assert 'class="chart-wrap"' in response.text
     assert 'data-auto-refresh-default="false"' in response.text
@@ -492,9 +496,9 @@ def test_admin_page_manages_users_and_settings(tmp_path, monkeypatch) -> None:
     assert "solar" in admin_page.text
     assert "<built-in method" not in admin_page.text
     assert ">Update</button>" in admin_page.text
-    assert 'href="/static/favicon.svg"' in admin_page.text
-    assert 'src="/static/logo.svg"' in admin_page.text
-    assert 'href="/static/css/app.css"' in admin_page.text
+    assert f'href="/static/favicon.svg?v={__version__}"' in admin_page.text
+    assert f'src="/static/logo.svg?v={__version__}"' in admin_page.text
+    assert f'href="/static/css/app.css?v={__version__}"' in admin_page.text
     assert "admin/static/css" not in admin_page.text
     assert create_user.status_code == 303
     assert create_user.headers["location"] == "http://testserver/admin?message=User%20created"
@@ -615,15 +619,15 @@ def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
         dashboard = client.get("/")
         admin_page = client.get("/admin")
 
-    assert 'href="/homesolar/static/css/app.css"' in login_page.text
-    assert 'src="/homesolar/static/logo.svg"' in login_page.text
-    assert 'href="/homesolar/static/favicon.svg"' in dashboard.text
-    assert 'src="/homesolar/static/logo.svg"' in dashboard.text
-    assert 'href="/homesolar/static/css/app.css"' in dashboard.text
-    assert 'src="/homesolar/static/js/dashboard.js"' in dashboard.text
+    assert f'href="/homesolar/static/css/app.css?v={__version__}"' in login_page.text
+    assert f'src="/homesolar/static/logo.svg?v={__version__}"' in login_page.text
+    assert f'href="/homesolar/static/favicon.svg?v={__version__}"' in dashboard.text
+    assert f'src="/homesolar/static/logo.svg?v={__version__}"' in dashboard.text
+    assert f'href="/homesolar/static/css/app.css?v={__version__}"' in dashboard.text
+    assert f'src="/homesolar/static/js/dashboard.js?v={__version__}"' in dashboard.text
     assert 'data-api-base-path="/homesolar"' in dashboard.text
     assert 'id="powerChartTotal"' in dashboard.text
-    assert 'href="/homesolar/static/css/app.css"' in admin_page.text
+    assert f'href="/homesolar/static/css/app.css?v={__version__}"' in admin_page.text
     assert "admin/static/css" not in admin_page.text
 
 

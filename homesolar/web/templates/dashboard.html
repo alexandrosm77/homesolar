@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
-    <link rel="icon" href="{{ asset_base_path }}/static/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css">
+    <link rel="icon" href="{{ asset_base_path }}/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css?v={{ asset_version }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   </head>
   <body
@@ -17,7 +17,7 @@
       <header class="topbar">
         <div>
           <div class="brand">
-            <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg" alt="" width="40" height="40">
+            <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg?v={{ asset_version }}" alt="" width="40" height="40">
             <p class="eyebrow">{{ settings.app_name }}</p>
           </div>
           <h1>{{ "%.0f"|format(view.total_power_w) }} W</h1>
@@ -263,6 +263,6 @@
       </section>
     </main>
     <script>window.HOMESOLAR_I18N = {{ js_i18n | tojson }};</script>
-    <script src="{{ asset_base_path }}/static/js/dashboard.js"></script>
+    <script src="{{ asset_base_path }}/static/js/dashboard.js?v={{ asset_version }}"></script>
   </body>
 </html>

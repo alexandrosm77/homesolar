@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from homesolar import __version__
 from homesolar.collector.processor import ensure_inverter
 from homesolar.collector.scheduler import CollectorService
 from homesolar.config import AppConfig
@@ -85,7 +86,7 @@ def create_app(config: AppConfig) -> FastAPI:
             await report_scheduler.stop()
             await collector.stop()
 
-    app = FastAPI(title="homesolar", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="homesolar", version=__version__, lifespan=lifespan)
 
     if web_credentials is not None:
 
@@ -130,12 +131,14 @@ def create_app(config: AppConfig) -> FastAPI:
                 "config": config,
                 "title": settings["app_name"],
                 "asset_base_path": public_base_path,
+                "asset_version": __version__,
                 "t": t,
                 "lang": lang,
                 "languages": LANGUAGE_NAMES,
                 "js_i18n": _js_i18n(t),
             },
         )
+        _disable_html_cache(response)
         return _apply_language_cookie(request, response, lang)
 
     @app.get("/login", response_class=HTMLResponse)
@@ -154,11 +157,13 @@ def create_app(config: AppConfig) -> FastAPI:
                 "settings": settings,
                 "error": None,
                 "asset_base_path": public_base_path,
+                "asset_version": __version__,
                 "t": t,
                 "lang": lang,
                 "languages": LANGUAGE_NAMES,
             },
         )
+        _disable_html_cache(response)
         return _apply_language_cookie(request, response, lang)
 
     @app.post("/login")
@@ -182,7 +187,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 _set_session_cookie(response, user)
                 return response
 
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "login.html",
             {
@@ -190,12 +195,15 @@ def create_app(config: AppConfig) -> FastAPI:
                 "settings": settings,
                 "error": t["invalid_credentials"],
                 "asset_base_path": public_base_path,
+                "asset_version": __version__,
                 "t": t,
                 "lang": lang,
                 "languages": LANGUAGE_NAMES,
             },
             status_code=401,
         )
+        _disable_html_cache(response)
+        return response
 
     @app.get("/admin", response_class=HTMLResponse)
     def admin_page(request: Request) -> Response:
@@ -224,11 +232,13 @@ def create_app(config: AppConfig) -> FastAPI:
                     "message": request.query_params.get("message"),
                     "error": request.query_params.get("error"),
                     "asset_base_path": public_base_path,
+                    "asset_version": __version__,
                     "t": t,
                     "lang": lang,
                     "languages": LANGUAGE_NAMES,
                 },
             )
+            _disable_html_cache(response)
             return _apply_language_cookie(request, response, lang)
 
     @app.post("/admin/users")
@@ -580,6 +590,10 @@ def _apply_language_cookie(request: Request, response: Response, lang: str) -> R
             path="/",
         )
     return response
+
+
+def _disable_html_cache(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
 
 
 def _clean_user_language(value: str | None) -> str | None:
