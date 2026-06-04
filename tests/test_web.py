@@ -92,6 +92,7 @@ def test_dashboard_script_persists_auto_refresh_in_session() -> None:
     assert "sessionStorage.setItem(" in script
     assert "autoRefreshEnabled: Boolean(autoRefreshToggle?.checked)" in script
     assert "settings.autoRefreshEnabled" in script
+    assert "document.hidden" not in script
 
 
 def test_dashboard_and_login_render_in_greek(tmp_path) -> None:

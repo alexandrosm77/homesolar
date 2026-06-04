@@ -138,9 +138,7 @@
       return;
     }
     autoRefreshTimer = window.setInterval(() => {
-      if (!document.hidden) {
-        window.location.reload();
-      }
+      window.location.reload();
     }, autoRefreshSeconds * 1000);
   }
 
