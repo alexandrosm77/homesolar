@@ -8,6 +8,8 @@ def test_load_example_config() -> None:
 
     assert config.inverters[0].id == "apsystems_home"
     assert config.web.base_path == ""
+    assert config.web.auto_refresh_enabled is False
+    assert config.web.auto_refresh_seconds == 60
     assert config.inverters[0].polling.live_seconds == 60
     assert config.inverters[1].type == "kostal_html"
     assert config.inverters[1].polling.alarm_seconds is None

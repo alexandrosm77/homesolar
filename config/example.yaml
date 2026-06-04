@@ -20,6 +20,9 @@ web:
   port: 8000
   # Set to /homesolar when serving behind a reverse proxy subpath.
   base_path: ""
+  # Initial dashboard auto-refresh state and interval. Users can override it in the UI.
+  auto_refresh_enabled: false
+  auto_refresh_seconds: 60
   auth:
     type: basic
     username_env: HOMESOLAR_WEB_USER

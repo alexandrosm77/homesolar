@@ -8,7 +8,11 @@
     <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   </head>
-  <body data-api-base-path="{{ asset_base_path }}">
+  <body
+    data-api-base-path="{{ asset_base_path }}"
+    data-auto-refresh-default="{{ 'true' if config.web.auto_refresh_enabled else 'false' }}"
+    data-auto-refresh-seconds="{{ config.web.auto_refresh_seconds }}"
+  >
     <main class="shell">
       <header class="topbar">
         <div>
@@ -77,6 +81,11 @@
             <option value="monthly">{{ t.monthly }}</option>
             <option value="yearly">{{ t.yearly }}</option>
           </select>
+        </label>
+        <label class="toggle-field">
+          <span>{{ t.auto_refresh }}</span>
+          <input id="autoRefreshToggle" type="checkbox" {% if config.web.auto_refresh_enabled %}checked{% endif %}>
+          <span class="switch-track" aria-hidden="true"></span>
         </label>
         <button class="reset-btn" id="resetDashboard" type="button">{{ t.reset }}</button>
       </section>

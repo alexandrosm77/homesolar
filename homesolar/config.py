@@ -59,6 +59,8 @@ class WebConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     base_path: str = ""
+    auto_refresh_enabled: bool = False
+    auto_refresh_seconds: int = Field(default=60, ge=5)
     auth: BasicAuthConfig | None = None
 
     @field_validator("base_path")

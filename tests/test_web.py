@@ -14,6 +14,13 @@ from homesolar.db import models
 from homesolar.web.app import create_app
 
 
+@pytest.fixture(autouse=True)
+def clear_default_web_auth_env(monkeypatch) -> None:
+    monkeypatch.delenv("HOMESOLAR_WEB_USER", raising=False)
+    monkeypatch.delenv("HOMESOLAR_WEB_PASSWORD", raising=False)
+    monkeypatch.delenv("HOMESOLAR_WEB_BASE_PATH", raising=False)
+
+
 def _yesterday_reading(timezone: str) -> tuple:
     from datetime import UTC, datetime, time, timedelta
     from zoneinfo import ZoneInfo
@@ -71,6 +78,9 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
     assert response.status_code == 200
     assert "Test" in response.text
     assert 'class="chart-wrap"' in response.text
+    assert 'data-auto-refresh-default="false"' in response.text
+    assert 'data-auto-refresh-seconds="60"' in response.text
+    assert 'id="autoRefreshToggle"' in response.text
     assert 'id="resetDashboard"' in response.text
 
 

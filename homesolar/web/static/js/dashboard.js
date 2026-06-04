@@ -3,6 +3,7 @@
   const aggregateEl = document.getElementById("aggregateChart");
   const inverterFilter = document.getElementById("inverterFilter");
   const aggregatePeriod = document.getElementById("aggregatePeriod");
+  const autoRefreshToggle = document.getElementById("autoRefreshToggle");
   const resetDashboard = document.getElementById("resetDashboard");
   const powerChartTotal = document.getElementById("powerChartTotal");
   const rangeButtons = Array.from(document.querySelectorAll(".range-btn"));
@@ -11,10 +12,16 @@
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
   const apiBasePath = document.body.dataset.apiBasePath || "";
+  const autoRefreshDefault = document.body.dataset.autoRefreshDefault === "true";
+  const autoRefreshSeconds = Math.max(
+    5,
+    Number.parseInt(document.body.dataset.autoRefreshSeconds || "60", 10) || 60,
+  );
   const i18n = window.HOMESOLAR_I18N || {};
   let selectedRange = "today";
   let powerChart = null;
   let aggregateChart = null;
+  let autoRefreshTimer = null;
   const componentCharts = new Map();
 
   function readSettings() {
@@ -32,6 +39,7 @@
         inverterId: inverterFilter?.value || "",
         range: selectedRange,
         aggregatePeriod: aggregatePeriod?.value || "daily",
+        autoRefreshEnabled: Boolean(autoRefreshToggle?.checked),
         componentPanels: componentPanelSettings(),
         componentMetrics: componentMetricSettings(),
       }),
@@ -71,6 +79,12 @@
     if (settings.range && rangeButtons.some((button) => button.dataset.range === settings.range)) {
       selectedRange = settings.range;
     }
+    if (autoRefreshToggle) {
+      autoRefreshToggle.checked =
+        typeof settings.autoRefreshEnabled === "boolean"
+          ? settings.autoRefreshEnabled
+          : autoRefreshDefault;
+    }
     if (settings.componentPanels) {
       componentPanels.forEach((panel) => {
         const value = settings.componentPanels[panel.dataset.componentPanel];
@@ -89,6 +103,7 @@
       });
     }
     syncRangeButtons();
+    syncAutoRefresh();
   }
 
   function syncRangeButtons() {
@@ -106,10 +121,27 @@
     if (aggregatePeriod) {
       aggregatePeriod.value = "daily";
     }
+    if (autoRefreshToggle) {
+      autoRefreshToggle.checked = autoRefreshDefault;
+    }
     componentPanels.forEach((panel) => {
       panel.open = false;
     });
     syncRangeButtons();
+    syncAutoRefresh();
+  }
+
+  function syncAutoRefresh() {
+    window.clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+    if (!autoRefreshToggle?.checked) {
+      return;
+    }
+    autoRefreshTimer = window.setInterval(() => {
+      if (!document.hidden) {
+        window.location.reload();
+      }
+    }, autoRefreshSeconds * 1000);
   }
 
   function inverterParams() {
@@ -402,6 +434,10 @@
     if (chartsAvailable) {
       await loadAggregateChart();
     }
+  });
+  autoRefreshToggle?.addEventListener("change", () => {
+    writeSettings();
+    syncAutoRefresh();
   });
   componentPanels.forEach((panel) => {
     panel.addEventListener("toggle", async () => {

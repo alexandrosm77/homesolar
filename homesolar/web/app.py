@@ -127,6 +127,7 @@ def create_app(config: AppConfig) -> FastAPI:
             {
                 "view": view,
                 "settings": settings,
+                "config": config,
                 "title": settings["app_name"],
                 "asset_base_path": public_base_path,
                 "t": t,

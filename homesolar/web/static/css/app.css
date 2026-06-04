@@ -370,7 +370,7 @@ dt,
 }
 
 .control-panel {
-  grid-template-columns: minmax(180px, 1fr) minmax(280px, 1.6fr) minmax(150px, 0.8fr) auto;
+  grid-template-columns: minmax(170px, 1fr) minmax(280px, 1.6fr) minmax(145px, 0.8fr) auto auto;
   align-items: end;
   padding: 12px;
   background: var(--panel);
@@ -378,7 +378,7 @@ dt,
   border-radius: 8px;
 }
 
-.control-panel label span,
+.control-panel label > span:first-child,
 .range-summary span {
   display: block;
   margin-bottom: 5px;
@@ -426,6 +426,57 @@ dt,
 .reset-btn {
   padding-inline: 14px;
   background: var(--soft);
+}
+
+.toggle-field {
+  display: grid;
+  justify-items: start;
+}
+
+.toggle-field input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  cursor: pointer;
+}
+
+.switch-track::after {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(23, 33, 28, 0.24);
+  content: "";
+  transition:
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+
+.toggle-field input:checked + .switch-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.toggle-field input:checked + .switch-track::after {
+  transform: translateX(22px);
+}
+
+.toggle-field input:focus-visible + .switch-track {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .range-summary {
