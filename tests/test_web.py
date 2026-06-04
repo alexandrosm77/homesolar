@@ -11,7 +11,7 @@ from homesolar.config import (
     WebConfig,
 )
 from homesolar.db import models
-from homesolar.web.app import create_app
+from homesolar.web.app import PACKAGE_DIR, create_app
 
 
 @pytest.fixture(autouse=True)
@@ -82,6 +82,16 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
     assert 'data-auto-refresh-seconds="60"' in response.text
     assert 'id="autoRefreshToggle"' in response.text
     assert 'id="resetDashboard"' in response.text
+
+
+def test_dashboard_script_persists_auto_refresh_in_session() -> None:
+    script = (PACKAGE_DIR / "static/js/dashboard.js").read_text(encoding="utf-8")
+
+    assert 'const sessionSettingsKey = "homesolar.dashboard.settings";' in script
+    assert "sessionStorage.getItem(sessionSettingsKey)" in script
+    assert "sessionStorage.setItem(" in script
+    assert "autoRefreshEnabled: Boolean(autoRefreshToggle?.checked)" in script
+    assert "settings.autoRefreshEnabled" in script
 
 
 def test_dashboard_and_login_render_in_greek(tmp_path) -> None:

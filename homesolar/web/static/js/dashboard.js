@@ -8,7 +8,7 @@
   const powerChartTotal = document.getElementById("powerChartTotal");
   const rangeButtons = Array.from(document.querySelectorAll(".range-btn"));
   const componentPanels = Array.from(document.querySelectorAll("[data-component-panel]"));
-  const storageKey = "homesolar.dashboard.settings";
+  const sessionSettingsKey = "homesolar.dashboard.settings";
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
   const apiBasePath = document.body.dataset.apiBasePath || "";
@@ -26,7 +26,7 @@
 
   function readSettings() {
     try {
-      return JSON.parse(sessionStorage.getItem(storageKey) || "{}");
+      return JSON.parse(sessionStorage.getItem(sessionSettingsKey) || "{}");
     } catch {
       return {};
     }
@@ -34,7 +34,7 @@
 
   function writeSettings() {
     sessionStorage.setItem(
-      storageKey,
+      sessionSettingsKey,
       JSON.stringify({
         inverterId: inverterFilter?.value || "",
         range: selectedRange,
@@ -113,7 +113,7 @@
   }
 
   function resetSettings() {
-    sessionStorage.removeItem(storageKey);
+    sessionStorage.removeItem(sessionSettingsKey);
     selectedRange = "today";
     if (inverterFilter) {
       inverterFilter.value = "";
