@@ -7,7 +7,7 @@ services:
     container_name: homesolar
     restart: unless-stopped
     ports:
-      - "${HOMESOLAR_PORT:-8080}:8000"
+      - "${HOMESOLAR_PORT:-8081}:8000"
     environment:
       HOMESOLAR_WEB_USER: ${HOMESOLAR_WEB_USER:-}
       HOMESOLAR_WEB_PASSWORD: ${HOMESOLAR_WEB_PASSWORD:-}

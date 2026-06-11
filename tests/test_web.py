@@ -123,18 +123,18 @@ def test_dashboard_and_login_render_in_greek(tmp_path) -> None:
         cookie_dashboard = client.get("/")
 
     assert english.status_code == 200
-    assert '<html lang="en">' in english.text
+    assert '<html lang="en"' in english.text
     assert "Energy Aggregates" in english.text
 
     assert dashboard.status_code == 200
-    assert '<html lang="el">' in dashboard.text
+    assert '<html lang="el"' in dashboard.text
     assert "Συγκεντρωτικά Ενέργειας" in dashboard.text
     assert "homesolar_lang=el" in dashboard.headers.get("set-cookie", "")
 
     assert login.status_code == 200
     assert "Σύνδεση" in login.text
 
-    assert '<html lang="el">' in cookie_dashboard.text
+    assert '<html lang="el"' in cookie_dashboard.text
 
 
 def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> None:
@@ -580,7 +580,7 @@ def test_per_user_language_preference(tmp_path, monkeypatch) -> None:
             assert solar.language == "en"
 
     assert preference_dashboard.status_code == 200
-    assert '<html lang="el">' in preference_dashboard.text
+    assert '<html lang="el"' in preference_dashboard.text
 
 
 def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
@@ -864,3 +864,88 @@ def test_report_due_logic(tmp_path, monkeypatch) -> None:
 
             user.last_report_sent_at = morning
             assert report_due(session, user, 5, morning) is False
+
+
+def test_overview_endpoint_scopes_hero_and_reports_whole_system_health(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(id="one", name="One", type="kostal_html", base_url="http://example.test"),
+            InverterConfig(id="two", name="Two", type="kostal_html", base_url="http://example.test"),
+        ],
+    )
+    app = create_app(config)
+
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    now = datetime.now(UTC)
+    with TestClient(app) as client:
+        with app.state.session_factory() as session:
+            session.add_all(
+                [
+                    models.Reading(
+                        inverter_id="one",
+                        observed_at=now,
+                        current_power_w=1500,
+                        energy_today_kwh=1.25,
+                        energy_lifetime_kwh=100.0,
+                        energy_session_kwh=None,
+                        status="ok",
+                        extra={},
+                    ),
+                    models.Reading(
+                        inverter_id="two",
+                        observed_at=now,
+                        current_power_w=500,
+                        energy_today_kwh=0.5,
+                        energy_lifetime_kwh=50.0,
+                        energy_session_kwh=None,
+                        status="ok",
+                        extra={},
+                    ),
+                ]
+            )
+            session.commit()
+
+        whole = client.get("/api/overview")
+        scoped = client.get("/api/overview?inverter_id=one")
+
+    assert whole.status_code == 200
+    body = whole.json()
+    assert body["now_power_w"] == 2000
+    assert body["today_kwh"] == 1.75
+    assert body["median_kwh"] == 0.0
+    assert body["health"]["ok"] is True
+    assert body["health"]["message"] == "All systems normal"
+
+    assert scoped.status_code == 200
+    scoped_body = scoped.json()
+    assert scoped_body["inverter_id"] == "one"
+    assert scoped_body["now_power_w"] == 1500
+    assert scoped_body["today_kwh"] == 1.25
+
+
+def test_theme_cookie_persists_and_renders_html_class(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(id="test", name="Test", type="kostal_html", base_url="http://example.test")
+        ],
+    )
+    app = create_app(config)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        default = client.get("/")
+        dark = client.get("/?theme=dark")
+        cookie_dashboard = client.get("/")
+
+    assert 'class="theme-system"' in default.text
+    assert 'class="theme-dark"' in dark.text
+    assert "homesolar_theme=dark" in dark.headers.get("set-cookie", "")
+    assert 'class="theme-dark"' in cookie_dashboard.text

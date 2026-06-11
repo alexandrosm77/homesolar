@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="{{ lang }}">
+<html lang="{{ lang }}" class="theme-{{ theme }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <link rel="icon" href="{{ asset_base_path }}/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css?v={{ asset_version }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="{{ asset_base_path }}/static/js/chart.umd.min.js?v={{ asset_version }}"></script>
   </head>
   <body
     data-api-base-path="{{ asset_base_path }}"
@@ -14,49 +14,55 @@
     data-auto-refresh-seconds="{{ config.web.auto_refresh_seconds }}"
   >
     <main class="shell">
-      <header class="topbar">
-        <div>
-          <div class="brand">
-            <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg?v={{ asset_version }}" alt="" width="40" height="40">
-            <p class="eyebrow">{{ settings.app_name }}</p>
-          </div>
-          <h1>{{ "%.0f"|format(view.total_power_w) }} W</h1>
-          <p class="updated">{{ t.updated }} {{ view.updated_at.strftime("%H:%M:%S") }}</p>
-          {% if settings.dashboard_note %}
-            <p class="updated">{{ settings.dashboard_note }}</p>
-          {% endif %}
+      <nav class="utility-strip" aria-label="Site">
+        <div class="brand">
+          <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg?v={{ asset_version }}" alt="" width="40" height="40">
+          <p class="eyebrow">{{ settings.app_name }}</p>
         </div>
-        <div class="today">
+        <div class="utility-actions">
           <nav class="lang-switch" aria-label="Language">
             {% for code, name in languages.items() %}
               <a class="{{ 'active' if lang == code else '' }}" href="?lang={{ code }}">{{ name }}</a>
             {% endfor %}
           </nav>
-          <span>{{ t.today_label }}</span>
-          <strong>{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
+          <nav class="theme-switch" aria-label="{{ t.theme_label }}">
+            <a class="{{ 'active' if theme == 'light' else '' }}" href="?theme=light">{{ t.theme_light }}</a>
+            <a class="{{ 'active' if theme == 'dark' else '' }}" href="?theme=dark">{{ t.theme_dark }}</a>
+            <a class="{{ 'active' if theme == 'system' else '' }}" href="?theme=system">{{ t.theme_system }}</a>
+          </nav>
           <a class="admin-link" href="admin">{{ t.admin_link }}</a>
           <form method="post" action="logout">
             <button class="logout-btn" type="submit">{{ t.logout }}</button>
           </form>
         </div>
+      </nav>
+
+      <header class="hero">
+        <div class="hero-stat">
+          <span class="hero-label">{{ t.hero_now }}</span>
+          <strong class="hero-now" id="heroNow">{{ "%.0f"|format(view.total_power_w) }} W</strong>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-label">{{ t.hero_today }}</span>
+          <strong class="hero-today" id="heroToday">{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
+          <span class="hero-sub">{{ t.median_label }} <span id="heroMedian">--</span></span>
+        </div>
+        <div class="hero-meta">
+          <p class="updated">{{ t.updated }} <span id="heroUpdated">{{ view.updated_at.strftime("%H:%M:%S") }}</span></p>
+          {% if settings.dashboard_note %}
+            <p class="updated">{{ settings.dashboard_note }}</p>
+          {% endif %}
+        </div>
       </header>
 
-      <section class="summary-grid">
-        <div class="summary-item">
-          <span>{{ t.sources }}</span>
-          <strong>{{ view.online_count }}/{{ view.inverters|length }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>{{ t.alarms }}</span>
-          <strong>{{ view.alarm_count }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>{{ t.poll_errors }}</span>
-          <strong>{{ view.poll_error_count }}</strong>
-        </div>
-      </section>
+      <div class="health-status {{ 'ok' if view.health.ok else 'bad' }}" id="healthStatus" role="status">
+        <span class="status-dot"></span>
+        <span data-health-message>{{ view.health.message }}</span>
+      </div>
 
-      <section class="control-panel">
+      <details class="filters" id="filtersPanel" open>
+        <summary>{{ t.filters }}</summary>
+        <section class="control-panel">
         <label>
           <span>{{ t.inverter }}</span>
           <select id="inverterFilter">
@@ -88,7 +94,8 @@
           <span class="switch-track" aria-hidden="true"></span>
         </label>
         <button class="reset-btn" id="resetDashboard" type="button">{{ t.reset }}</button>
-      </section>
+        </section>
+      </details>
 
       <section class="range-summary" id="rangeSummary">
         <div>

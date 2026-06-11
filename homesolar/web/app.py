@@ -10,6 +10,7 @@ import hmac
 import os
 from pathlib import Path
 import secrets
+import statistics
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -33,8 +34,12 @@ from homesolar.web.i18n import (
     LANGUAGE_COOKIE_NAME,
     LANGUAGE_NAMES,
     SUPPORTED_LANGUAGES,
+    SUPPORTED_THEMES,
+    THEME_COOKIE_MAX_AGE,
+    THEME_COOKIE_NAME,
     get_translations,
     resolve_language,
+    resolve_theme,
 )
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -118,6 +123,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 else None
             )
             lang = resolve_language(request, _user_language(user))
+            theme = resolve_theme(request)
             t = get_translations(lang)
             _persist_user_language(session, user, request)
             view = _dashboard_view(session, t)
@@ -134,16 +140,19 @@ def create_app(config: AppConfig) -> FastAPI:
                 "asset_version": __version__,
                 "t": t,
                 "lang": lang,
+                "theme": theme,
                 "languages": LANGUAGE_NAMES,
                 "js_i18n": _js_i18n(t),
             },
         )
         _disable_html_cache(response)
-        return _apply_language_cookie(request, response, lang)
+        _apply_language_cookie(request, response, lang)
+        return _apply_theme_cookie(request, response, theme)
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
         lang = resolve_language(request)
+        theme = resolve_theme(request)
         t = get_translations(lang)
         with session_factory() as session:
             if web_credentials is not None and _request_user(session, request, web_credentials):
@@ -160,11 +169,13 @@ def create_app(config: AppConfig) -> FastAPI:
                 "asset_version": __version__,
                 "t": t,
                 "lang": lang,
+                "theme": theme,
                 "languages": LANGUAGE_NAMES,
             },
         )
         _disable_html_cache(response)
-        return _apply_language_cookie(request, response, lang)
+        _apply_language_cookie(request, response, lang)
+        return _apply_theme_cookie(request, response, theme)
 
     @app.post("/login")
     async def login(
@@ -176,6 +187,7 @@ def create_app(config: AppConfig) -> FastAPI:
             return RedirectResponse(url=".", status_code=303)
 
         lang = resolve_language(request)
+        theme = resolve_theme(request)
         t = get_translations(lang)
         with session_factory() as session:
             user = _authenticate_user(session, username, password, web_credentials)
@@ -198,6 +210,7 @@ def create_app(config: AppConfig) -> FastAPI:
                 "asset_version": __version__,
                 "t": t,
                 "lang": lang,
+                "theme": theme,
                 "languages": LANGUAGE_NAMES,
             },
             status_code=401,
@@ -212,6 +225,7 @@ def create_app(config: AppConfig) -> FastAPI:
             if isinstance(user, Response):
                 return user
             lang = resolve_language(request, _user_language(user))
+            theme = resolve_theme(request)
             t = get_translations(lang)
             _persist_user_language(session, user, request)
             users = session.scalars(select(models.AppUser).order_by(models.AppUser.username)).all()
@@ -235,11 +249,13 @@ def create_app(config: AppConfig) -> FastAPI:
                     "asset_version": __version__,
                     "t": t,
                     "lang": lang,
+                    "theme": theme,
                     "languages": LANGUAGE_NAMES,
                 },
             )
             _disable_html_cache(response)
-            return _apply_language_cookie(request, response, lang)
+            _apply_language_cookie(request, response, lang)
+            return _apply_theme_cookie(request, response, theme)
 
     @app.post("/admin/users")
     def admin_create_user(
@@ -541,6 +557,17 @@ def create_app(config: AppConfig) -> FastAPI:
         with session_factory() as session:
             return _summary_for_range(session, range_name=range_name, inverter_id=inverter_id)
 
+    @app.get("/api/overview")
+    def overview(request: Request, inverter_id: str | None = None) -> dict:
+        with session_factory() as session:
+            user = (
+                _request_user(session, request, web_credentials)
+                if web_credentials is not None
+                else None
+            )
+            t = get_translations(resolve_language(request, _user_language(user)))
+            return _overview_data(session, t, inverter_id=inverter_id)
+
     return app
 
 
@@ -586,6 +613,18 @@ def _apply_language_cookie(request: Request, response: Response, lang: str) -> R
             LANGUAGE_COOKIE_NAME,
             lang,
             max_age=LANGUAGE_COOKIE_MAX_AGE,
+            samesite="lax",
+            path="/",
+        )
+    return response
+
+
+def _apply_theme_cookie(request: Request, response: Response, theme: str) -> Response:
+    if request.query_params.get("theme") in SUPPORTED_THEMES:
+        response.set_cookie(
+            THEME_COOKIE_NAME,
+            theme,
+            max_age=THEME_COOKIE_MAX_AGE,
             samesite="lax",
             path="/",
         )
@@ -929,8 +968,58 @@ def _dashboard_view(session: Session, t: dict[str, str]) -> dict:
         "online_count": online_count,
         "alarm_count": alarm_count,
         "poll_error_count": poll_error_count,
+        "health": _build_health(online_count, len(inverters), alarm_count, poll_error_count, t),
         "updated_at": now,
         "recent_events": [_poll_event_dict(event) for event in _recent_poll_events(session, 6)],
+    }
+
+
+def _build_health(
+    online_count: int, total_count: int, alarm_count: int, poll_error_count: int, t: dict[str, str]
+) -> dict:
+    problems = []
+    if alarm_count:
+        problems.append(t["status_alarms"].format(n=alarm_count))
+    if poll_error_count:
+        problems.append(t["status_poll_errors"].format(n=poll_error_count))
+    ok = not problems
+    return {
+        "ok": ok,
+        "message": t["status_ok"] if ok else " · ".join(problems),
+        "online_count": online_count,
+        "total_count": total_count,
+        "alarm_count": alarm_count,
+        "poll_error_count": poll_error_count,
+    }
+
+
+def _median_daily_kwh(session: Session, inverter_id: str | None, days: int = 14) -> float | None:
+    aggregate = _aggregate_energy(session, period="daily", inverter_id=inverter_id, limit=days + 1)
+    history = aggregate["totals"][:-1]
+    if not history:
+        return None
+    return round(statistics.median(history), 3)
+
+
+def _overview_data(session: Session, t: dict[str, str], inverter_id: str | None) -> dict:
+    view = _dashboard_view(session, t)
+    now = datetime.now(UTC)
+    now_power = 0.0
+    today_kwh = 0.0
+    for inverter in _filtered_inverters(session, inverter_id):
+        latest = _latest_reading(session, inverter.id)
+        if latest and latest.current_power_w is not None:
+            now_power += latest.current_power_w
+        today = _today_energy_kwh(session, inverter)
+        if today is not None:
+            today_kwh += today
+    return {
+        "inverter_id": inverter_id,
+        "now_power_w": round(now_power),
+        "today_kwh": round(today_kwh, 3),
+        "median_kwh": _median_daily_kwh(session, inverter_id),
+        "updated_at": now.isoformat(),
+        "health": view["health"],
     }
 
 

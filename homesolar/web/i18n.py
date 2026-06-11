@@ -7,6 +7,10 @@ SUPPORTED_LANGUAGES = ("en", "el")
 LANGUAGE_COOKIE_NAME = "homesolar_lang"
 LANGUAGE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 LANGUAGE_NAMES = {"en": "EN", "el": "ΕΛ"}
+THEME_COOKIE_NAME = "homesolar_theme"
+THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+SUPPORTED_THEMES = ("light", "dark", "system")
+DEFAULT_THEME = "system"
 
 _TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
@@ -32,6 +36,17 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "yearly": "Yearly",
         "auto_refresh": "Auto-refresh",
         "reset": "Reset",
+        "hero_now": "Now",
+        "hero_today": "Today",
+        "median_label": "14-day median",
+        "filters": "Filters",
+        "theme_label": "Theme",
+        "theme_light": "Light",
+        "theme_dark": "Dark",
+        "theme_system": "System",
+        "status_ok": "All systems normal",
+        "status_alarms": "{n} in alarm",
+        "status_poll_errors": "{n} poll errors",
         "selected_energy": "selected energy",
         "peak_power": "peak power",
         "average_power": "average power",
@@ -151,6 +166,17 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "yearly": "Ετήσια",
         "auto_refresh": "Αυτόματη ανανέωση",
         "reset": "Επαναφορά",
+        "hero_now": "Τώρα",
+        "hero_today": "Σήμερα",
+        "median_label": "διάμεσος 14 ημερών",
+        "filters": "Φίλτρα",
+        "theme_label": "Θέμα",
+        "theme_light": "Φωτεινό",
+        "theme_dark": "Σκούρο",
+        "theme_system": "Σύστημα",
+        "status_ok": "Όλα τα συστήματα κανονικά",
+        "status_alarms": "{n} σε συναγερμό",
+        "status_poll_errors": "{n} σφάλματα λήψης",
         "selected_energy": "επιλεγμένη ενέργεια",
         "peak_power": "μέγιστη ισχύς",
         "average_power": "μέση ισχύς",
@@ -248,6 +274,16 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "report_history_chart_y": "Ενέργεια (kWh)",
     },
 }
+
+
+def resolve_theme(request: Request) -> str:
+    param = request.query_params.get("theme")
+    if param in SUPPORTED_THEMES:
+        return param
+    cookie = request.cookies.get(THEME_COOKIE_NAME)
+    if cookie in SUPPORTED_THEMES:
+        return cookie
+    return DEFAULT_THEME
 
 
 def resolve_language(request: Request, user_language: str | None = None) -> str:

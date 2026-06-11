@@ -8,6 +8,13 @@
   const powerChartTotal = document.getElementById("powerChartTotal");
   const rangeButtons = Array.from(document.querySelectorAll(".range-btn"));
   const componentPanels = Array.from(document.querySelectorAll("[data-component-panel]"));
+  const heroNow = document.getElementById("heroNow");
+  const heroToday = document.getElementById("heroToday");
+  const heroMedian = document.getElementById("heroMedian");
+  const heroUpdated = document.getElementById("heroUpdated");
+  const healthStatus = document.getElementById("healthStatus");
+  const filtersPanel = document.getElementById("filtersPanel");
+  const desktopFilters = window.matchMedia("(min-width: 781px)");
   const sessionSettingsKey = "homesolar.dashboard.settings";
   const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
@@ -23,6 +30,15 @@
   let aggregateChart = null;
   let autoRefreshTimer = null;
   const componentCharts = new Map();
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  if (window.Chart) {
+    Chart.defaults.color = cssVar("--chart-text") || Chart.defaults.color;
+    Chart.defaults.borderColor = cssVar("--chart-grid") || Chart.defaults.borderColor;
+  }
 
   function readSettings() {
     try {
@@ -40,6 +56,7 @@
         range: selectedRange,
         aggregatePeriod: aggregatePeriod?.value || "daily",
         autoRefreshEnabled: Boolean(autoRefreshToggle?.checked),
+        filtersOpen: Boolean(filtersPanel?.open),
         componentPanels: componentPanelSettings(),
         componentMetrics: componentMetricSettings(),
       }),
@@ -102,8 +119,22 @@
         }
       });
     }
+    if (filtersPanel) {
+      if (typeof settings.filtersOpen === "boolean") {
+        filtersPanel.open = settings.filtersOpen;
+      } else if (!desktopFilters.matches) {
+        filtersPanel.open = false;
+      }
+      syncFiltersForViewport();
+    }
     syncRangeButtons();
     syncAutoRefresh();
+  }
+
+  function syncFiltersForViewport() {
+    if (filtersPanel && desktopFilters.matches) {
+      filtersPanel.open = true;
+    }
   }
 
   function syncRangeButtons() {
@@ -127,6 +158,10 @@
     componentPanels.forEach((panel) => {
       panel.open = false;
     });
+    if (filtersPanel) {
+      filtersPanel.open = false;
+      syncFiltersForViewport();
+    }
     syncRangeButtons();
     syncAutoRefresh();
   }
@@ -138,7 +173,11 @@
       return;
     }
     autoRefreshTimer = window.setInterval(() => {
-      window.location.reload();
+      if (chartsAvailable) {
+        refreshDashboard();
+      } else {
+        loadOverview();
+      }
     }, autoRefreshSeconds * 1000);
   }
 
@@ -401,8 +440,38 @@
       .join("");
   }
 
+  async function loadOverview() {
+    const response = await fetch(apiUrl("/api/overview", inverterParams()));
+    const payload = await response.json();
+    if (heroNow) {
+      heroNow.textContent = formatPower(payload.now_power_w);
+    }
+    if (heroToday) {
+      heroToday.textContent = formatEnergy(payload.today_kwh);
+    }
+    if (heroMedian) {
+      heroMedian.textContent = formatEnergy(payload.median_kwh);
+    }
+    if (heroUpdated && payload.updated_at) {
+      heroUpdated.textContent = new Date(payload.updated_at).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+    if (healthStatus && payload.health) {
+      const messageEl = healthStatus.querySelector("[data-health-message]");
+      if (messageEl) {
+        messageEl.textContent = payload.health.message;
+      }
+      healthStatus.classList.toggle("ok", Boolean(payload.health.ok));
+      healthStatus.classList.toggle("bad", !payload.health.ok);
+    }
+  }
+
   async function refreshDashboard() {
     await Promise.all([
+      loadOverview(),
       loadPowerChart(),
       loadSummary(),
       loadAggregateChart(),
@@ -461,8 +530,16 @@
     }
   });
 
+  filtersPanel?.addEventListener("toggle", () => {
+    writeSettings();
+  });
+
+  desktopFilters.addEventListener("change", syncFiltersForViewport);
+
   restoreSettings();
   if (chartsAvailable) {
     await refreshDashboard();
+  } else {
+    await loadOverview();
   }
 })();
