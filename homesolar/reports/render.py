@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from homesolar.archive import Archive
 from homesolar.config import EmailConfig
 from homesolar.db import models
 from homesolar.reports import charts
@@ -88,7 +89,11 @@ def _section(metrics: dict, history: list[tuple[str, float]], t: dict, images: d
 
 
 def build_user_report(
-    session: Session, user: models.AppUser, app_name: str, now: datetime | None = None
+    session: Session,
+    user: models.AppUser,
+    app_name: str,
+    now: datetime | None = None,
+    archive: Archive | None = None,
 ) -> dict | None:
     inverters = selected_inverters(session, user)
     if not user.email or not inverters:
@@ -104,9 +109,19 @@ def build_user_report(
 
     for inverter in inverters:
         start_utc, end_utc, date_label = yesterday_window(inverter.timezone, now)
-        metrics = inverter_day_metrics(session, inverter, start_utc, end_utc)
+        metrics = (
+            archive.inverter_day_metrics(inverter.id, start_utc, end_utc)
+            if archive is not None
+            else inverter_day_metrics(session, inverter, start_utc, end_utc)
+        )
+        if metrics is None:
+            continue
         metrics["date_label"] = date_label
-        history = daily_history(session, inverter, HISTORY_DAYS, now)
+        history = (
+            archive.daily_history(inverter.id, HISTORY_DAYS, now)
+            if archive is not None
+            else daily_history(session, inverter, HISTORY_DAYS, now)
+        )
         total_kwh += metrics["total_kwh"]
         header_date = header_date or date_label
         sections.append(_section(metrics, history, t, images))

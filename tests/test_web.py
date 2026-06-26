@@ -77,6 +77,7 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
 
     with TestClient(app) as client:
         response = client.get("/")
+        latest = client.get("/api/inverters/test/latest")
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -86,6 +87,8 @@ def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
     assert 'data-auto-refresh-seconds="60"' in response.text
     assert 'id="autoRefreshToggle"' in response.text
     assert 'id="resetDashboard"' in response.text
+    assert latest.status_code == 200
+    assert latest.json() == {"inverter_id": "test", "reading": None}
 
 
 def test_dashboard_script_persists_auto_refresh_in_session() -> None:
@@ -188,7 +191,90 @@ def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> N
         response = client.get("/api/inverters")
 
     assert response.status_code == 200
-    assert response.json()[0]["today_kwh"] == 10.13
+    body = response.json()[0]
+    assert set(body) == {
+        "id",
+        "name",
+        "type",
+        "base_url",
+        "enabled",
+        "timezone",
+        "first_seen_at",
+        "last_seen_at",
+        "latest",
+        "last_poll",
+        "latest_alarm",
+        "today_kwh",
+    }
+    assert set(body["latest"]) == {
+        "id",
+        "inverter_id",
+        "observed_at",
+        "current_power_w",
+        "energy_today_kwh",
+        "energy_lifetime_kwh",
+        "energy_session_kwh",
+        "status",
+        "extra",
+    }
+    assert body["today_kwh"] == 10.13
+
+
+def test_today_summary_uses_archive_produced_energy_rule(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="kostal",
+                name="Kostal",
+                type="kostal_html",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from datetime import UTC, datetime, timedelta
+
+    from fastapi.testclient import TestClient
+
+    now = datetime.now(UTC)
+    with TestClient(app) as client:
+        with app.state.session_factory() as session:
+            session.add_all(
+                [
+                    models.Reading(
+                        inverter_id="kostal",
+                        observed_at=now - timedelta(minutes=5),
+                        current_power_w=4000,
+                        energy_today_kwh=10.13,
+                        energy_lifetime_kwh=64262,
+                        energy_session_kwh=None,
+                        status="feed in (MPP)",
+                        extra={},
+                    ),
+                    models.Reading(
+                        inverter_id="kostal",
+                        observed_at=now,
+                        current_power_w=3000,
+                        energy_today_kwh=1.0,
+                        energy_lifetime_kwh=64263,
+                        energy_session_kwh=None,
+                        status="feed in (MPP)",
+                        extra={},
+                    ),
+                ]
+            )
+            session.commit()
+
+        response = client.get("/api/summary?range=today&inverter_id=kostal")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_kwh"] == 10.13
+    assert body["peak_power_w"] == 4000
+    assert body["reading_count"] == 2
 
 
 def test_filter_and_aggregate_endpoints(tmp_path) -> None:
@@ -296,19 +382,54 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
                     confidence="normal",
                 )
             )
+            session.add(
+                models.PollEvent(
+                    inverter_id="one",
+                    kind="live",
+                    started_at=second.observed_at,
+                    finished_at=second.observed_at,
+                    duration_ms=50,
+                    success=True,
+                )
+            )
+            second_id = second.id
             session.commit()
 
+        readings = client.get("/api/readings?inverter_id=one")
+        energy_today = client.get("/api/energy/today")
+        intervals = client.get("/api/energy/intervals?inverter_id=one")
+        events = client.get("/api/events?inverter_id=one")
         power = client.get("/api/chart/power?range=24h&inverter_id=one")
+        today_power = client.get("/api/chart/power?range=today&inverter_id=one")
+        today_alias = client.get("/api/chart/today")
         components = client.get("/api/chart/components?range=24h&inverter_id=one")
         component_voltage = client.get(
             "/api/chart/components?range=24h&inverter_id=one&metric=voltage_v"
         )
         summary = client.get("/api/summary?range=today&inverter_id=one")
+        latest = client.get("/api/inverters/one/latest")
+        missing_latest = client.get("/api/inverters/missing/latest")
         aggregates = client.get("/api/aggregates?period=daily&inverter_id=one&limit=2")
         dashboard = client.get("/")
 
+    assert readings.status_code == 200
+    assert readings.json()[-1]["id"] == second_id
+    assert energy_today.status_code == 200
+    assert energy_today.json()["inverters"][0]["today_kwh"] == 1.25
+    assert intervals.status_code == 200
+    assert intervals.json()[0]["generated_kwh"] == 0.25
+    assert events.status_code == 200
+    assert events.json()[0]["success"] is True
     assert power.status_code == 200
     assert power.json()["series"][0]["points"][-1]["y"] == 1500
+    assert today_power.status_code == 200
+    today_power_body = today_power.json()
+    assert today_power_body["range"] == "today"
+    assert today_power_body["series"][0]["inverter_id"] == "one"
+    assert today_power_body["series"][0]["points"][-1]["y"] == 1500
+    assert set(today_power_body["series"][0]["points"][-1]) == {"x", "y"}
+    assert today_alias.status_code == 200
+    assert today_alias.json()["series"][0]["points"][-1]["y"] == 1500
     assert components.status_code == 200
     assert components.json()["series"][0]["name"] == "Channel 1"
     assert components.json()["series"][0]["points"][-1]["y"] == 650
@@ -325,6 +446,14 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
     assert component_voltage.json()["series"][0]["points"][-1]["y"] == 33
     assert summary.status_code == 200
     assert summary.json()["total_kwh"] == 1.25
+    assert latest.status_code == 200
+    latest_body = latest.json()
+    assert latest_body["inverter"]["id"] == "one"
+    assert latest_body["reading"]["id"] == second_id
+    assert latest_body["components"][0]["component_name"] == "channel_1"
+    assert latest_body["components"][1]["power_w"] == 850
+    assert latest_body["today_kwh"] == 1.25
+    assert missing_latest.status_code == 404
     assert aggregates.status_code == 200
     assert aggregates.json()["series"][0]["data"][-1] == 1.25
     assert dashboard.status_code == 200
@@ -915,6 +1044,14 @@ def test_overview_endpoint_scopes_hero_and_reports_whole_system_health(tmp_path)
 
     assert whole.status_code == 200
     body = whole.json()
+    assert set(body) == {
+        "inverter_id",
+        "now_power_w",
+        "today_kwh",
+        "median_kwh",
+        "updated_at",
+        "health",
+    }
     assert body["now_power_w"] == 2000
     assert body["today_kwh"] == 1.75
     assert body["median_kwh"] == 0.0

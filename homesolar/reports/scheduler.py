@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from homesolar.archive import Archive
 from homesolar.config import AppConfig
 from homesolar.db import models
 from homesolar.reports.render import build_user_report, selected_inverters, send_user_report
@@ -43,6 +44,7 @@ class ReportScheduler:
     def __init__(self, config: AppConfig, session_factory: sessionmaker[Session]) -> None:
         self.config = config
         self.session_factory = session_factory
+        self.archive = Archive(session_factory)
         self._task: asyncio.Task | None = None
         self._stopped = asyncio.Event()
 
@@ -85,7 +87,7 @@ class ReportScheduler:
             for user in users:
                 if not report_due(session, user, self.config.email.send_hour_local, now):
                     continue
-                report = build_user_report(session, user, app_name, now)
+                report = build_user_report(session, user, app_name, now, archive=self.archive)
                 if report is None:
                     continue
                 try:
