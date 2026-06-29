@@ -14,7 +14,13 @@ from homesolar.db import models
 
 def produced_energy_today(session: Session, inverter: models.Inverter, now: datetime) -> float | None:
     start_utc, end_utc = local_day_window_utc(inverter.timezone, now)
-    return produced_energy_for_window(session, inverter.id, start_utc, end_utc)
+    return produced_energy_for_window(
+        session,
+        inverter.id,
+        start_utc,
+        end_utc,
+        use_reported_daily_counter=uses_reported_daily_counter(inverter),
+    )
 
 
 def produced_energy_for_local_day(
@@ -22,24 +28,40 @@ def produced_energy_for_local_day(
 ) -> float:
     local_date = now.astimezone(ZoneInfo(inverter.timezone)).date() - timedelta(days=days_before_today)
     start_utc, end_utc = local_date_window_utc(inverter.timezone, local_date)
-    return produced_energy_for_window(session, inverter.id, start_utc, end_utc) or 0.0
+    return (
+        produced_energy_for_window(
+            session,
+            inverter.id,
+            start_utc,
+            end_utc,
+            use_reported_daily_counter=uses_reported_daily_counter(inverter),
+        )
+        or 0.0
+    )
 
 
 def produced_energy_for_window(
-    session: Session, inverter_id: str, start_utc: datetime, end_utc: datetime
+    session: Session,
+    inverter_id: str,
+    start_utc: datetime,
+    end_utc: datetime,
+    *,
+    use_reported_daily_counter: bool = True,
 ) -> float | None:
-    counter = session.scalar(
-        select(func.max(models.Reading.energy_today_kwh))
-        .where(models.Reading.inverter_id == inverter_id)
-        .where(models.Reading.observed_at >= start_utc)
-        .where(models.Reading.observed_at < end_utc)
-        .where(models.Reading.energy_today_kwh.is_not(None))
-    )
-    if counter is not None:
-        return round(float(counter), 3)
+    if use_reported_daily_counter:
+        counter = session.scalar(
+            select(func.max(models.Reading.energy_today_kwh))
+            .where(models.Reading.inverter_id == inverter_id)
+            .where(models.Reading.observed_at >= start_utc)
+            .where(models.Reading.observed_at < end_utc)
+            .where(models.Reading.energy_today_kwh.is_not(None))
+        )
+        if counter is not None:
+            return round(float(counter), 3)
     total = session.scalar(
         select(func.sum(models.EnergyInterval.generated_kwh))
         .where(models.EnergyInterval.inverter_id == inverter_id)
+        .where(models.EnergyInterval.start_at >= start_utc)
         .where(models.EnergyInterval.end_at >= start_utc)
         .where(models.EnergyInterval.end_at < end_utc)
         .where(models.EnergyInterval.confidence == "normal")
@@ -52,7 +74,17 @@ def produced_energy_for_date_label(
 ) -> float | None:
     local_date = date.fromisoformat(local_date_label)
     start_utc, end_utc = local_date_window_utc(inverter.timezone, local_date)
-    return produced_energy_for_window(session, inverter.id, start_utc, end_utc)
+    return produced_energy_for_window(
+        session,
+        inverter.id,
+        start_utc,
+        end_utc,
+        use_reported_daily_counter=uses_reported_daily_counter(inverter),
+    )
+
+
+def uses_reported_daily_counter(inverter: models.Inverter) -> bool:
+    return inverter.type != "apsystems_ez1d"
 
 
 def median_daily_kwh(

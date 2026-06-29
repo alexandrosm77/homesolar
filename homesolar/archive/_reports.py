@@ -6,7 +6,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from homesolar.archive._energy import produced_energy_for_date_label, produced_energy_for_window
+from homesolar.archive._energy import (
+    produced_energy_for_date_label,
+    produced_energy_for_window,
+    uses_reported_daily_counter,
+)
 from homesolar.archive._time import as_utc
 from homesolar.db import models
 
@@ -39,7 +43,16 @@ def inverter_day_metrics(
         if producing:
             first_local = as_utc(min(producing)).astimezone(tz)
             last_local = as_utc(max(producing)).astimezone(tz)
-    total_kwh = produced_energy_for_window(session, inverter.id, start_utc, end_utc) or 0.0
+    total_kwh = (
+        produced_energy_for_window(
+            session,
+            inverter.id,
+            start_utc,
+            end_utc,
+            use_reported_daily_counter=uses_reported_daily_counter(inverter),
+        )
+        or 0.0
+    )
     lifetime_kwh = next(
         (reading.energy_lifetime_kwh for reading in reversed(readings) if reading.energy_lifetime_kwh is not None),
         None,

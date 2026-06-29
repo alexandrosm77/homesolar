@@ -6,6 +6,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from homesolar.archive._energy import (
+    produced_energy_for_date_label,
+    produced_energy_for_window,
+    uses_reported_daily_counter,
+)
 from homesolar.db import models
 
 
@@ -51,21 +56,13 @@ def inverter_day_metrics(
             first_local = _as_utc(min(producing)).astimezone(tz)
             last_local = _as_utc(max(producing)).astimezone(tz)
 
-    counter_kwh = max(
-        (r.energy_today_kwh for r in readings if r.energy_today_kwh is not None),
-        default=0.0,
-    )
-    interval_total = sum(
-        interval.generated_kwh or 0.0
-        for interval in session.scalars(
-            select(models.EnergyInterval)
-            .where(models.EnergyInterval.inverter_id == inverter.id)
-            .where(models.EnergyInterval.end_at >= start_utc)
-            .where(models.EnergyInterval.end_at < end_utc)
-            .where(models.EnergyInterval.confidence == "normal")
-        ).all()
-    )
-    total_kwh = counter_kwh if counter_kwh > 0 else interval_total
+    total_kwh = produced_energy_for_window(
+        session,
+        inverter.id,
+        start_utc,
+        end_utc,
+        use_reported_daily_counter=uses_reported_daily_counter(inverter),
+    ) or 0.0
 
     lifetime_kwh = next(
         (r.energy_lifetime_kwh for r in reversed(readings) if r.energy_lifetime_kwh is not None),
@@ -98,23 +95,11 @@ def daily_history(
     tz = ZoneInfo(inverter.timezone)
     local_now = (now or datetime.now(UTC)).astimezone(tz)
     today_local = datetime.combine(local_now.date(), time.min, tzinfo=tz)
-    window_start = (today_local - timedelta(days=days)).astimezone(UTC)
-    readings = session.scalars(
-        select(models.Reading)
-        .where(models.Reading.inverter_id == inverter.id)
-        .where(models.Reading.observed_at >= window_start)
-        .where(models.Reading.observed_at < today_local.astimezone(UTC))
-        .where(models.Reading.energy_today_kwh.is_not(None))
-        .order_by(models.Reading.observed_at)
-    ).all()
-
-    totals: dict[str, float] = {}
-    for reading in readings:
-        local_date = _as_utc(reading.observed_at).astimezone(tz).date().isoformat()
-        totals[local_date] = max(totals.get(local_date, 0.0), reading.energy_today_kwh or 0.0)
-
     labels = [
         (today_local - timedelta(days=offset)).date().isoformat()
         for offset in reversed(range(1, days + 1))
     ]
-    return [(label, round(totals.get(label, 0.0), 3)) for label in labels]
+    return [
+        (label, round(produced_energy_for_date_label(session, inverter, label) or 0.0, 3))
+        for label in labels
+    ]

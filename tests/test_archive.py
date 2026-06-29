@@ -58,6 +58,48 @@ def test_archive_produced_energy_falls_back_to_normal_confidence_intervals() -> 
     assert snapshot.inverters[0].produced_energy_today_kwh == 0.25
 
 
+def test_archive_interval_fallback_ignores_intervals_started_before_today() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        yesterday = _add_reading(session, "one", now - timedelta(days=1), today=None)
+        first = _add_reading(session, "one", now - timedelta(hours=2), today=None)
+        second = _add_reading(session, "one", now - timedelta(hours=1), today=None)
+        session.flush()
+        session.add_all(
+            [
+                _interval("one", yesterday, first, 99.0, "normal"),
+                _interval("one", first, second, 0.25, "normal"),
+            ]
+        )
+        session.commit()
+
+    snapshot = archive.dashboard_snapshot(now)
+
+    assert snapshot.total_today_kwh == 0.25
+    assert snapshot.inverters[0].produced_energy_today_kwh == 0.25
+
+
+def test_archive_apsystems_ignores_reported_daily_counter() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one", type_="apsystems_ez1d")
+        first = _add_reading(session, "one", now - timedelta(hours=2), today=99.0)
+        second = _add_reading(session, "one", now - timedelta(hours=1), today=100.0)
+        session.flush()
+        session.add(_interval("one", first, second, 0.25, "normal"))
+        session.commit()
+
+    snapshot = archive.dashboard_snapshot(now)
+
+    assert snapshot.total_today_kwh == 0.25
+    assert snapshot.inverters[0].produced_energy_today_kwh == 0.25
+
+
 def test_archive_dashboard_snapshot_returns_health_components_and_recent_events() -> None:
     archive, session_factory = _archive()
     now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
@@ -149,12 +191,18 @@ def _archive():
     return Archive(session_factory), session_factory
 
 
-def _add_inverter(session, inverter_id: str, name: str | None = None, last_seen_at=None) -> None:
+def _add_inverter(
+    session,
+    inverter_id: str,
+    name: str | None = None,
+    last_seen_at=None,
+    type_: str = "kostal_html",
+) -> None:
     session.add(
         models.Inverter(
             id=inverter_id,
             name=name or inverter_id.title(),
-            type="kostal_html",
+            type=type_,
             base_url="http://example.test",
             timezone="Europe/London",
             enabled=True,

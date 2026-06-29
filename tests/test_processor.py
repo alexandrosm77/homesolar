@@ -98,6 +98,36 @@ def test_processor_rejects_implausible_counter_jump() -> None:
         assert "exceeds plausible" in (interval.notes or "")
 
 
+def test_processor_rejects_counter_delta_across_local_days() -> None:
+    engine = engine_from_url("sqlite:///:memory:")
+    create_schema(engine)
+    session_factory = sessionmaker_from_engine(engine)
+    config = InverterConfig(
+        id="test",
+        name="Test",
+        type="kostal_html",
+        base_url="http://example.test",
+        timezone="Europe/Athens",
+    )
+    first_at = datetime(2026, 5, 25, 20, 59, tzinfo=UTC)
+
+    with session_factory() as session:
+        ensure_inverter(session, config)
+        store_adapter_result(session, config, _result(first_at, lifetime=100.0, today=5.0))
+        store_adapter_result(
+            session,
+            config,
+            _result(first_at + timedelta(minutes=2), lifetime=100.2, today=5.2),
+        )
+        session.commit()
+
+        interval = session.scalars(select(models.EnergyInterval)).one()
+        assert interval.generated_kwh is None
+        assert interval.source_counter == "daily"
+        assert interval.confidence == "cross_day_counter"
+        assert "local day boundary" in (interval.notes or "")
+
+
 def _result(
     observed_at: datetime,
     lifetime: float,

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from homesolar.adapters.apsystems_ez1d import parse_output_data
 
 
-def test_parse_output_data_stores_e_counters_as_daily_energy() -> None:
+def test_parse_output_data_stores_e_counters_as_session_energy() -> None:
     reading = parse_output_data(
         {
             "message": "success",
@@ -21,11 +21,11 @@ def test_parse_output_data_stores_e_counters_as_daily_energy() -> None:
     )
 
     assert reading.current_power_w == 512
-    assert reading.energy_today_kwh == 3.05
-    assert reading.energy_session_kwh is None
+    assert reading.energy_today_kwh is None
+    assert reading.energy_session_kwh == 3.05
     assert reading.energy_lifetime_kwh == 8.0
 
     by_name = {component.component_name: component for component in reading.components}
-    assert by_name["channel_1"].energy_today_kwh == 1.25
-    assert by_name["channel_1"].energy_session_kwh is None
-    assert by_name["channel_2"].energy_today_kwh == 1.8
+    assert by_name["channel_1"].energy_today_kwh is None
+    assert by_name["channel_1"].energy_session_kwh == 1.25
+    assert by_name["channel_2"].energy_session_kwh == 1.8

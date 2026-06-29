@@ -104,23 +104,23 @@ def parse_output_data(payload: dict[str, Any], observed_at: datetime) -> Normali
             component_type="channel",
             component_name="channel_1",
             power_w=p1,
-            energy_today_kwh=e1,
             energy_lifetime_kwh=te1,
+            energy_session_kwh=e1,
         ),
         ComponentReading(
             component_type="channel",
             component_name="channel_2",
             power_w=p2,
-            energy_today_kwh=e2,
             energy_lifetime_kwh=te2,
+            energy_session_kwh=e2,
         ),
     ]
 
     return NormalizedReading(
         observed_at=observed_at,
         current_power_w=sum(v for v in [p1, p2] if v is not None),
-        energy_today_kwh=sum(v for v in [e1, e2] if v is not None),
         energy_lifetime_kwh=sum(v for v in [te1, te2] if v is not None),
+        energy_session_kwh=sum(v for v in [e1, e2] if v is not None),
         status=payload.get("message"),
         components=components,
         extra={"device_id": payload.get("deviceId"), "source": "getOutputData"},

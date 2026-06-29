@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -90,7 +91,7 @@ def store_adapter_result(session: Session, config: InverterConfig, result: Adapt
                 )
             )
 
-        _store_interval(session, config.id, reading_model)
+        _store_interval(session, config.id, config.timezone, reading_model)
 
     if result.alarm:
         session.add(
@@ -162,7 +163,9 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _store_interval(session: Session, inverter_id: str, current: models.Reading) -> None:
+def _store_interval(
+    session: Session, inverter_id: str, timezone: str, current: models.Reading
+) -> None:
     previous = session.scalars(
         select(models.Reading)
         .where(models.Reading.inverter_id == inverter_id)
@@ -173,7 +176,7 @@ def _store_interval(session: Session, inverter_id: str, current: models.Reading)
     if previous is None:
         return
 
-    generated, source, confidence, notes = _calculate_delta(previous, current)
+    generated, source, confidence, notes = _calculate_delta(previous, current, timezone)
     session.add(
         models.EnergyInterval(
             inverter_id=inverter_id,
@@ -190,23 +193,26 @@ def _store_interval(session: Session, inverter_id: str, current: models.Reading)
 
 
 def _calculate_delta(
-    previous: models.Reading, current: models.Reading
+    previous: models.Reading, current: models.Reading, timezone: str
 ) -> tuple[float | None, str | None, str, str | None]:
     if previous.energy_today_kwh is not None and current.energy_today_kwh is not None:
-        return _counter_delta(previous, current, "daily")
+        return _counter_delta(previous, current, "daily", timezone)
 
     if previous.energy_lifetime_kwh is not None and current.energy_lifetime_kwh is not None:
-        return _counter_delta(previous, current, "lifetime")
+        return _counter_delta(previous, current, "lifetime", timezone)
 
     if previous.energy_session_kwh is not None and current.energy_session_kwh is not None:
-        return _counter_delta(previous, current, "session")
+        return _counter_delta(previous, current, "session", timezone)
 
     return None, None, "missing_counter", "no comparable cumulative counter"
 
 
 def _counter_delta(
-    previous: models.Reading, current: models.Reading, source: str
+    previous: models.Reading, current: models.Reading, source: str, timezone: str
 ) -> tuple[float | None, str, str, str | None]:
+    if not _same_local_day(previous.observed_at, current.observed_at, timezone):
+        return None, source, "cross_day_counter", f"{source} counter crossed local day boundary"
+
     previous_value = getattr(previous, f"energy_{_counter_field(source)}_kwh")
     current_value = getattr(current, f"energy_{_counter_field(source)}_kwh")
     delta = current_value - previous_value
@@ -222,6 +228,11 @@ def _counter_delta(
 
 def _counter_field(source: str) -> str:
     return "today" if source == "daily" else source
+
+
+def _same_local_day(previous: datetime, current: datetime, timezone: str) -> bool:
+    tz = ZoneInfo(timezone)
+    return _as_utc(previous).astimezone(tz).date() == _as_utc(current).astimezone(tz).date()
 
 
 def _is_plausible_delta(
