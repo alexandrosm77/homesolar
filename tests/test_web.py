@@ -220,7 +220,7 @@ def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> N
     assert body["today_kwh"] == 10.13
 
 
-def test_today_summary_uses_archive_produced_energy_rule(tmp_path) -> None:
+def test_today_summary_uses_latest_daily_counter(tmp_path) -> None:
     config = AppConfig(
         database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
         collector=CollectorConfig(enabled=False),
@@ -272,7 +272,7 @@ def test_today_summary_uses_archive_produced_energy_rule(tmp_path) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_kwh"] == 10.13
+    assert body["total_kwh"] == 1.0
     assert body["peak_power_w"] == 4000
     assert body["reading_count"] == 2
 

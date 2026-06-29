@@ -14,13 +14,32 @@ from homesolar.db import models
 
 def produced_energy_today(session: Session, inverter: models.Inverter, now: datetime) -> float | None:
     start_utc, end_utc = local_day_window_utc(inverter.timezone, now)
+    if uses_reported_daily_counter(inverter):
+        counter = latest_reported_daily_counter(session, inverter.id, start_utc, end_utc)
+        if counter is not None:
+            return counter
     return produced_energy_for_window(
         session,
         inverter.id,
         start_utc,
         end_utc,
-        use_reported_daily_counter=uses_reported_daily_counter(inverter),
+        use_reported_daily_counter=False,
     )
+
+
+def latest_reported_daily_counter(
+    session: Session, inverter_id: str, start_utc: datetime, end_utc: datetime
+) -> float | None:
+    counter = session.scalar(
+        select(models.Reading.energy_today_kwh)
+        .where(models.Reading.inverter_id == inverter_id)
+        .where(models.Reading.observed_at >= start_utc)
+        .where(models.Reading.observed_at < end_utc)
+        .where(models.Reading.energy_today_kwh.is_not(None))
+        .order_by(models.Reading.observed_at.desc())
+        .limit(1)
+    )
+    return round(float(counter), 3) if counter is not None else None
 
 
 def produced_energy_for_local_day(

@@ -34,6 +34,24 @@ def test_archive_produced_energy_prefers_highest_daily_counter_for_local_day() -
     assert snapshot.inverters[0].produced_energy_today_kwh == 1.25
 
 
+def test_archive_today_uses_latest_daily_counter_not_stale_midnight_max() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        _add_reading(session, "one", now - timedelta(hours=11), power=None, today=61.3)
+        _add_reading(session, "one", now - timedelta(hours=10), power=None, today=0.0)
+        _add_reading(session, "one", now - timedelta(minutes=10), power=7500, today=20.84)
+        _add_reading(session, "one", now, power=7600, today=22.25)
+        session.commit()
+
+    snapshot = archive.dashboard_snapshot(now)
+
+    assert snapshot.total_today_kwh == 22.25
+    assert snapshot.inverters[0].produced_energy_today_kwh == 22.25
+
+
 def test_archive_produced_energy_falls_back_to_normal_confidence_intervals() -> None:
     archive, session_factory = _archive()
     now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
