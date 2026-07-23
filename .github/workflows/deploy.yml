@@ -108,7 +108,7 @@ jobs:
       PI_APP_DIR: ${{ vars.PI_APP_DIR || '/home/alexandros/homesolar' }}
       PI_CONFIG_PATH: ${{ vars.PI_CONFIG_PATH || '/home/alexandros/homesolar/config/local.yaml' }}
       PI_DATA_DIR: ${{ vars.PI_DATA_DIR || '/home/alexandros/homesolar/data' }}
-      HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8080' }}
+      HOMESOLAR_PORT: ${{ vars.HOMESOLAR_PORT || '8081' }}
       HOMESOLAR_WEB_BASE_PATH: ${{ vars.HOMESOLAR_WEB_BASE_PATH || '/homesolar' }}
     steps:
       - name: Check out repository

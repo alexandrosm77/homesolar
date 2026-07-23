@@ -64,7 +64,7 @@ PI_PORT=22
 PI_APP_DIR=/home/alexandros/homesolar
 PI_CONFIG_PATH=/home/alexandros/homesolar/config/local.yaml
 PI_DATA_DIR=/home/alexandros/homesolar/data
-HOMESOLAR_PORT=8080
+HOMESOLAR_PORT=8081
 ```
 
 Add these GitHub `production` environment secrets:
