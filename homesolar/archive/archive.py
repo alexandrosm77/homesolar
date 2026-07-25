@@ -78,9 +78,15 @@ class Archive:
         with self._session_factory() as session:
             return _aggregates.summary_for_range(session, range_name, inverter_id)
 
-    def aggregate_energy(self, period: str, inverter_id: str | None = None, limit: int = 14) -> dict:
+    def aggregate_energy(
+        self,
+        period: str,
+        inverter_id: str | None = None,
+        limit: int = 14,
+        now: datetime | None = None,
+    ) -> dict:
         with self._session_factory() as session:
-            return _aggregates.aggregate_energy(session, period, inverter_id, limit)
+            return _aggregates.aggregate_energy(session, period, inverter_id, limit, now)
 
     def inverter_day_metrics(
         self, inverter_id: str, start_utc: datetime, end_utc: datetime

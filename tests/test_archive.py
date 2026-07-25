@@ -118,6 +118,76 @@ def test_archive_apsystems_ignores_reported_daily_counter() -> None:
     assert snapshot.inverters[0].produced_energy_today_kwh == 0.25
 
 
+def test_archive_longer_aggregates_roll_up_daily_produced_energy() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        first = _add_reading(session, "one", now - timedelta(days=1, hours=2), today=1.0)
+        second = _add_reading(session, "one", now - timedelta(days=1, hours=1), today=2.5)
+        third = _add_reading(session, "one", now - timedelta(hours=2), today=None)
+        fourth = _add_reading(session, "one", now - timedelta(hours=1), today=None)
+        session.flush()
+        session.add_all(
+            [
+                _interval("one", first, second, 99.0, "normal"),
+                _interval("one", third, fourth, 1.25, "normal"),
+            ]
+        )
+        session.commit()
+
+    aggregate = archive.aggregate_energy("monthly", "one", limit=1, now=now)
+
+    assert aggregate["labels"] == ["2026-06"]
+    assert aggregate["series"][0]["data"] == [3.75]
+    assert aggregate["totals"] == [3.75]
+
+
+def test_archive_aggregates_use_latest_counter_for_current_local_day() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        _add_reading(session, "one", now - timedelta(hours=11), today=61.3)
+        _add_reading(session, "one", now - timedelta(hours=10), today=0.0)
+        _add_reading(session, "one", now - timedelta(minutes=10), today=20.84)
+        _add_reading(session, "one", now, today=22.25)
+        session.commit()
+
+    for period in ("daily", "weekly", "monthly", "yearly"):
+        aggregate = archive.aggregate_energy(period, "one", limit=1, now=now)
+
+        assert aggregate["series"][0]["data"] == [22.25]
+        assert aggregate["totals"] == [22.25]
+
+
+def test_archive_longer_aggregates_ignore_non_normal_intervals() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one", type_="apsystems_ez1d")
+        first = _add_reading(session, "one", now - timedelta(hours=3), today=99.0)
+        second = _add_reading(session, "one", now - timedelta(hours=2), today=100.0)
+        third = _add_reading(session, "one", now - timedelta(hours=1), today=101.0)
+        session.flush()
+        session.add_all(
+            [
+                _interval("one", first, second, 0.75, "normal"),
+                _interval("one", second, third, 100.0, "implausible_delta"),
+            ]
+        )
+        session.commit()
+
+    aggregate = archive.aggregate_energy("yearly", "one", limit=1, now=now)
+
+    assert aggregate["labels"] == ["2026"]
+    assert aggregate["series"][0]["data"] == [0.75]
+    assert aggregate["totals"] == [0.75]
+
+
 def test_archive_dashboard_snapshot_returns_health_components_and_recent_events() -> None:
     archive, session_factory = _archive()
     now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
