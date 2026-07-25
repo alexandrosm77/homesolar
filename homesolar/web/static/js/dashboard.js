@@ -16,7 +16,7 @@
   const filtersPanel = document.getElementById("filtersPanel");
   const desktopFilters = window.matchMedia("(min-width: 781px)");
   const sessionSettingsKey = "homesolar.dashboard.settings";
-  const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
+  const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b9e", "#b7584f", "#45877d"];
   const chartsAvailable = Boolean(window.Chart && powerEl && aggregateEl);
   const apiBasePath = document.body.dataset.apiBasePath || "";
   const autoRefreshDefault = document.body.dataset.autoRefreshDefault === "true";
@@ -138,9 +138,11 @@
   }
 
   function syncRangeButtons() {
-    rangeButtons.forEach((button) =>
-      button.classList.toggle("active", button.dataset.range === selectedRange),
-    );
+    rangeButtons.forEach((button) => {
+      const isActive = button.dataset.range === selectedRange;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
   }
 
   function resetSettings() {
@@ -263,6 +265,8 @@
         scales: {
           x: {
             type: "linear",
+            border: { color: cssVar("--chart-grid") },
+            grid: { display: false },
             ticks: {
               maxTicksLimit: 6,
               callback: (value) => formatTime(value),
@@ -270,11 +274,20 @@
           },
           y: {
             beginAtZero: true,
+            border: { display: false },
             ticks: { callback: (value) => `${value} W` },
           },
         },
         plugins: {
-          legend: { position: "bottom" },
+          legend: {
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              padding: 16,
+              usePointStyle: true,
+            },
+          },
           tooltip: {
             callbacks: {
               title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
@@ -344,6 +357,8 @@
         scales: {
           x: {
             type: "linear",
+            border: { color: cssVar("--chart-grid") },
+            grid: { display: false },
             ticks: {
               maxTicksLimit: 5,
               callback: (value) => formatTime(value),
@@ -351,11 +366,20 @@
           },
           y: {
             beginAtZero: true,
+            border: { display: false },
             ticks: { callback: (value) => `${value} ${payload.unit}` },
           },
         },
         plugins: {
-          legend: { position: "bottom" },
+          legend: {
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              padding: 14,
+              usePointStyle: true,
+            },
+          },
           tooltip: {
             callbacks: {
               title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
@@ -399,6 +423,7 @@
       data: series.data,
       backgroundColor: palette[index % palette.length],
       borderRadius: 4,
+      borderSkipped: false,
     }));
 
     if (aggregateChart) {
@@ -413,15 +438,29 @@
           responsive: true,
           maintainAspectRatio: false,
           scales: {
-            x: { stacked: true, ticks: { maxTicksLimit: 8 } },
+            x: {
+              stacked: true,
+              border: { color: cssVar("--chart-grid") },
+              grid: { display: false },
+              ticks: { maxTicksLimit: 8 },
+            },
             y: {
               stacked: true,
               beginAtZero: true,
+              border: { display: false },
               ticks: { callback: (value) => `${value} kWh` },
             },
           },
           plugins: {
-            legend: { position: "bottom" },
+            legend: {
+              position: "bottom",
+              labels: {
+                boxHeight: 8,
+                boxWidth: 8,
+                padding: 16,
+                usePointStyle: true,
+              },
+            },
             tooltip: {
               callbacks: {
                 label: (item) => `${item.dataset.label}: ${Number(item.raw).toFixed(2)} kWh`,

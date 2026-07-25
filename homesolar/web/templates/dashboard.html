@@ -9,11 +9,12 @@
     <script src="{{ asset_base_path }}/static/js/chart.umd.min.js?v={{ asset_version }}"></script>
   </head>
   <body
+    class="dashboard-body"
     data-api-base-path="{{ asset_base_path }}"
     data-auto-refresh-default="{{ 'true' if config.web.auto_refresh_enabled else 'false' }}"
     data-auto-refresh-seconds="{{ config.web.auto_refresh_seconds }}"
   >
-    <main class="shell">
+    <main class="shell dashboard-shell">
       <nav class="utility-strip" aria-label="Site">
         <div class="brand">
           <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg?v={{ asset_version }}" alt="" width="40" height="40">
@@ -39,11 +40,11 @@
       </nav>
 
       <header class="hero">
-        <div class="hero-stat">
+        <div class="hero-stat hero-stat-now">
           <span class="hero-label">{{ t.hero_now }}</span>
           <strong class="hero-now" id="heroNow">{{ "%.0f"|format(view.total_power_w) }} W</strong>
         </div>
-        <div class="hero-stat">
+        <div class="hero-stat hero-stat-today">
           <span class="hero-label">{{ t.hero_today }}</span>
           <strong class="hero-today" id="heroToday">{{ "%.2f"|format(view.total_today_kwh) }} kWh</strong>
           <span class="hero-sub">{{ t.median_label }} <span id="heroMedian">--</span></span>
@@ -99,26 +100,26 @@
       </details>
 
       <section class="range-summary" id="rangeSummary">
-        <div>
+        <div class="range-summary-energy">
           <span>{{ t.selected_energy }}</span>
           <strong data-summary="total">--</strong>
         </div>
-        <div>
+        <div class="range-summary-peak">
           <span>{{ t.peak_power }}</span>
           <strong data-summary="peak">--</strong>
         </div>
-        <div>
+        <div class="range-summary-average">
           <span>{{ t.average_power }}</span>
           <strong data-summary="average">--</strong>
         </div>
-        <div>
+        <div class="range-summary-samples">
           <span>{{ t.samples }}</span>
           <strong data-summary="samples">--</strong>
         </div>
       </section>
 
       <section class="dashboard-grid">
-        <section class="panel chart-panel">
+        <section class="panel chart-panel dashboard-primary-chart">
           <div class="panel-head">
             <h2>{{ t.power }}</h2>
             <span id="powerChartTotal">{{ "%.2f"|format(view.total_today_kwh) }} kWh</span>
