@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
-    "ruff>=0.6",
+    "ruff==0.16.0",
 ]
 
 [project.scripts]
@@ -39,6 +39,9 @@ packages = ["homesolar"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
