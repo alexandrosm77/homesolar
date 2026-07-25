@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from homesolar.archive._charts import component_chart_for_window
 from homesolar.archive._energy import (
     produced_energy_for_date_label,
     produced_energy_for_window,
     uses_reported_daily_counter,
 )
-from homesolar.archive._time import as_utc
+from homesolar.archive._queries import filtered_inverters
+from homesolar.archive._time import as_utc, local_date_window_utc
 from homesolar.db import models
 
 
@@ -84,3 +86,68 @@ def daily_history(
         (label, round(produced_energy_for_date_label(session, inverter, label) or 0.0, 3))
         for label in labels
     ]
+
+
+def historical_day(
+    session: Session,
+    local_date: date,
+    inverter_id: str | None,
+    component_metric: str,
+    metric_catalog: dict,
+) -> dict:
+    inverters = filtered_inverters(session, inverter_id)
+    results = []
+    for inverter in inverters:
+        start_utc, end_utc = local_date_window_utc(inverter.timezone, local_date)
+        metrics = inverter_day_metrics(session, inverter, start_utc, end_utc)
+        component_chart = component_chart_for_window(
+            session,
+            inverter,
+            start_utc,
+            end_utc,
+            component_metric,
+            metric_catalog,
+            range_name=local_date.isoformat(),
+            fallback_metric=False,
+        )
+        results.append(
+            {
+                **metrics,
+                "peak_at_local": (
+                    metrics["peak_at_local"].isoformat()
+                    if metrics["peak_at_local"] is not None
+                    else None
+                ),
+                "first_production_local": (
+                    metrics["first_production_local"].isoformat()
+                    if metrics["first_production_local"] is not None
+                    else None
+                ),
+                "last_production_local": (
+                    metrics["last_production_local"].isoformat()
+                    if metrics["last_production_local"] is not None
+                    else None
+                ),
+                "power_points": [
+                    {"x": observed.isoformat(), "y": value}
+                    for observed, value in metrics["power_points"]
+                ],
+                "components": component_chart,
+            }
+        )
+    power_values = [
+        point["y"]
+        for result in results
+        for point in result["power_points"]
+    ]
+    return {
+        "date": local_date.isoformat(),
+        "component_metric": component_metric,
+        "total_kwh": round(sum(result["total_kwh"] for result in results), 3),
+        "peak_power_w": max(power_values) if power_values else None,
+        "average_power_w": (
+            round(sum(power_values) / len(power_values), 1) if power_values else None
+        ),
+        "sample_count": sum(result["sample_count"] for result in results),
+        "inverters": results,
+    }

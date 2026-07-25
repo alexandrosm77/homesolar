@@ -410,6 +410,18 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
         latest = client.get("/api/inverters/one/latest")
         missing_latest = client.get("/api/inverters/missing/latest")
         aggregates = client.get("/api/aggregates?period=daily&inverter_id=one&limit=2")
+        history_api = client.get(
+            f"/api/history/energy?from={now.date()}&to={now.date()}&period=daily"
+            "&inverter_id=one"
+        )
+        history_day_api = client.get(
+            f"/api/history/day?date={now.date()}&inverter_id=one"
+            "&component_metric=power_w"
+        )
+        invalid_history = client.get(
+            "/api/history/energy?from=2026-02-01&to=2026-01-01&period=daily"
+        )
+        history_page = client.get("/history")
         dashboard = client.get("/")
 
     assert readings.status_code == 200
@@ -456,7 +468,20 @@ def test_filter_and_aggregate_endpoints(tmp_path) -> None:
     assert missing_latest.status_code == 404
     assert aggregates.status_code == 200
     assert aggregates.json()["series"][0]["data"][-1] == 1.25
+    assert history_api.status_code == 200
+    assert history_api.json()["period"] == "daily"
+    assert history_day_api.status_code == 200
+    assert history_day_api.json()["component_metric"] == "power_w"
+    assert history_day_api.json()["inverters"][0]["components"]["metric"] == "power_w"
+    assert invalid_history.status_code == 422
+    assert history_page.status_code == 200
+    assert 'id="historyFilters"' in history_page.text
+    assert 'id="historyChart"' in history_page.text
+    assert 'id="historyDayPowerChart"' in history_page.text
+    assert 'id="historyDayComponentChart"' in history_page.text
+    assert 'src="/static/js/history.js' in history_page.text
     assert dashboard.status_code == 200
+    assert 'href="history"' in dashboard.text
     assert 'data-component-chart="one"' in dashboard.text
     assert 'data-component-metric="voltage_v"' in dashboard.text
 
@@ -746,6 +771,7 @@ def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
             follow_redirects=False,
         )
         dashboard = client.get("/")
+        history_page = client.get("/history")
         admin_page = client.get("/admin")
 
     assert f'href="/homesolar/static/css/app.css?v={__version__}"' in login_page.text
@@ -756,6 +782,8 @@ def test_public_base_path_prefixes_assets(tmp_path, monkeypatch) -> None:
     assert f'src="/homesolar/static/js/dashboard.js?v={__version__}"' in dashboard.text
     assert 'data-api-base-path="/homesolar"' in dashboard.text
     assert 'id="powerChartTotal"' in dashboard.text
+    assert f'src="/homesolar/static/js/history.js?v={__version__}"' in history_page.text
+    assert 'data-api-base-path="/homesolar"' in history_page.text
     assert f'href="/homesolar/static/css/app.css?v={__version__}"' in admin_page.text
     assert "admin/static/css" not in admin_page.text
 

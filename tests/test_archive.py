@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from homesolar.archive import Archive
 from homesolar.db import models
@@ -182,6 +182,70 @@ def test_archive_recalculates_historical_energy_from_each_days_final_counter() -
     assert daily["series"][0]["data"] == [22.25, 0.0]
     assert monthly["series"][0]["data"] == [22.25]
     assert archive.daily_history("one", days=1, now=now) == [("2026-06-25", 22.25)]
+
+
+def test_archive_history_clamps_partial_calendar_buckets_to_selected_dates() -> None:
+    archive, session_factory = _archive()
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        _add_reading(session, "one", datetime(2026, 6, 1, 12, tzinfo=UTC), today=10.0)
+        _add_reading(session, "one", datetime(2026, 6, 15, 12, tzinfo=UTC), today=2.5)
+        _add_reading(session, "one", datetime(2026, 7, 1, 12, tzinfo=UTC), today=3.0)
+        session.commit()
+
+    history = archive.energy_history(
+        "monthly",
+        start_date=date(2026, 6, 15),
+        end_date=date(2026, 7, 1),
+        inverter_id="one",
+    )
+
+    assert history["from"] == "2026-06-15"
+    assert history["to"] == "2026-07-01"
+    assert history["labels"] == ["2026-06", "2026-07"]
+    assert history["series"][0]["data"] == [2.5, 3.0]
+    assert history["totals"] == [2.5, 3.0]
+
+
+def test_archive_historical_day_returns_power_metrics_and_components() -> None:
+    archive, session_factory = _archive()
+    observed_at = datetime(2026, 6, 15, 12, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        reading = _add_reading(session, "one", observed_at, power=1800, today=4.5)
+        session.flush()
+        session.add(
+            models.ComponentReading(
+                inverter_id="one",
+                observed_at=observed_at,
+                reading_id=reading.id,
+                component_type="channel",
+                component_name="channel_1",
+                power_w=900,
+                voltage_v=36,
+            )
+        )
+        session.commit()
+
+    detail = archive.historical_day(
+        local_date=date(2026, 6, 15),
+        inverter_id="one",
+        component_metric="power_w",
+        metric_catalog={
+            "power_w": {"label": "Power", "unit": "W"},
+            "voltage_v": {"label": "Voltage", "unit": "V"},
+        },
+    )
+
+    assert detail["date"] == "2026-06-15"
+    assert detail["total_kwh"] == 4.5
+    assert detail["peak_power_w"] == 1800
+    assert detail["sample_count"] == 1
+    assert detail["inverters"][0]["power_points"][0]["y"] == 1800
+    assert detail["inverters"][0]["components"]["metric"] == "power_w"
+    assert detail["inverters"][0]["components"]["series"][0]["points"][0]["y"] == 900
 
 
 def test_archive_longer_aggregates_ignore_non_normal_intervals() -> None:

@@ -388,7 +388,7 @@
   async function loadAggregateChart() {
     const params = inverterParams();
     const period = aggregatePeriod?.value || "daily";
-    const limits = { daily: 14, weekly: 12, monthly: 12, yearly: 5 };
+    const limits = { daily: 30, weekly: 26, monthly: 24, yearly: 10 };
     params.set("period", period);
     params.set("limit", limits[period] || 14);
     const response = await fetch(apiUrl("/api/aggregates", params));

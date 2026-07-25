@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import hashlib
 import hmac
 import os
@@ -154,6 +154,42 @@ def create_app(config: AppConfig) -> FastAPI:
                 "theme": theme,
                 "languages": LANGUAGE_NAMES,
                 "js_i18n": _js_i18n(t),
+            },
+        )
+        _disable_html_cache(response)
+        _apply_language_cookie(request, response, lang)
+        return _apply_theme_cookie(request, response, theme)
+
+    @app.get("/history", response_class=HTMLResponse)
+    def history_page(request: Request) -> HTMLResponse:
+        with session_factory() as session:
+            user = (
+                _request_user(session, request, web_credentials)
+                if web_credentials is not None
+                else None
+            )
+            lang = resolve_language(request, _user_language(user))
+            theme = resolve_theme(request)
+            t = get_translations(lang)
+            _persist_user_language(session, user, request)
+            settings = _settings_dict(session)
+            inverters = session.scalars(
+                select(models.Inverter).order_by(models.Inverter.name)
+            ).all()
+        response = templates.TemplateResponse(
+            request,
+            "history.html",
+            {
+                "settings": settings,
+                "inverters": inverters,
+                "title": f"{settings['app_name']} {t['title_history_suffix']}",
+                "asset_base_path": public_base_path,
+                "asset_version": __version__,
+                "t": t,
+                "lang": lang,
+                "theme": theme,
+                "languages": LANGUAGE_NAMES,
+                "history_i18n": _history_js_i18n(t),
             },
         )
         _disable_html_cache(response)
@@ -511,6 +547,39 @@ def create_app(config: AppConfig) -> FastAPI:
     ) -> dict:
         return archive.aggregate_energy(period=period, inverter_id=inverter_id, limit=limit)
 
+    @app.get("/api/history/energy")
+    def energy_history(
+        from_: date = Query(alias="from"),
+        to: date = Query(),
+        period: str = Query(default="monthly"),
+        inverter_id: str | None = None,
+    ) -> dict:
+        if from_ > to:
+            raise HTTPException(status_code=422, detail="'from' must not be after 'to'")
+        if (to - from_).days > 366 * 20:
+            raise HTTPException(status_code=422, detail="Date range cannot exceed 20 years")
+        return archive.energy_history(
+            period=period,
+            start_date=from_,
+            end_date=to,
+            inverter_id=inverter_id,
+        )
+
+    @app.get("/api/history/day")
+    def historical_day(
+        date_: date = Query(alias="date"),
+        inverter_id: str | None = None,
+        component_metric: str = Query(default="power_w"),
+    ) -> dict:
+        if component_metric not in COMPONENT_CHART_METRICS:
+            component_metric = "power_w"
+        return archive.historical_day(
+            local_date=date_,
+            inverter_id=inverter_id,
+            component_metric=component_metric,
+            metric_catalog=COMPONENT_CHART_METRICS,
+        )
+
     @app.get("/api/summary")
     def range_summary(
         range_name: str = Query(default="today", alias="range"),
@@ -644,6 +713,34 @@ def _js_i18n(t: dict[str, str]) -> dict:
         },
         "component_chart_title": t["component_chart_title"],
         "component_no_data": t["component_no_data"],
+    }
+
+
+def _history_js_i18n(t: dict[str, str]) -> dict:
+    return {
+        "loading": t["history_loading"],
+        "error": t["history_error"],
+        "no_data": t["history_no_data"],
+        "total_produced": t["history_total_produced"],
+        "average_per_day": t["history_average_per_day"],
+        "best_period": t["history_best_period"],
+        "active_periods": t["history_active_periods"],
+        "period": t["period"],
+        "total": t["total"],
+        "csv_filename": t["history_csv_filename"],
+        "day_loading": t["history_day_loading"],
+        "day_error": t["history_day_error"],
+        "day_no_data": t["history_day_no_data"],
+        "production_window": t["history_production_window"],
+        "peak_at": t["history_peak_at"],
+        "selected_energy": t["selected_energy"],
+        "samples": t["samples"],
+        "metric_labels": {
+            "power_w": t["metric_power"],
+            "voltage_v": t["metric_voltage"],
+            "current_a": t["metric_current"],
+            "energy_today_kwh": t["metric_energy"],
+        },
     }
 
 
@@ -1112,5 +1209,3 @@ def _duration_label(seconds: int | None, t: dict[str, str]) -> str:
         return t["mins_ago"].format(n=minutes)
     hours = minutes // 60
     return t["hours_ago"].format(n=hours)
-
-

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -87,6 +87,38 @@ class Archive:
     ) -> dict:
         with self._session_factory() as session:
             return _aggregates.aggregate_energy(session, period, inverter_id, limit, now)
+
+    def energy_history(
+        self,
+        period: str,
+        start_date: date,
+        end_date: date,
+        inverter_id: str | None = None,
+    ) -> dict:
+        with self._session_factory() as session:
+            return _aggregates.energy_history(
+                session,
+                period,
+                inverter_id,
+                start_date,
+                end_date,
+            )
+
+    def historical_day(
+        self,
+        local_date: date,
+        inverter_id: str | None,
+        component_metric: str,
+        metric_catalog: dict,
+    ) -> dict:
+        with self._session_factory() as session:
+            return _reports.historical_day(
+                session,
+                local_date,
+                inverter_id,
+                component_metric,
+                metric_catalog,
+            )
 
     def inverter_day_metrics(
         self, inverter_id: str, start_utc: datetime, end_utc: datetime

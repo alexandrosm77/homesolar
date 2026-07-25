@@ -30,6 +30,7 @@
             <a class="{{ 'active' if theme == 'dark' else '' }}" href="?theme=dark">{{ t.theme_dark }}</a>
             <a class="{{ 'active' if theme == 'system' else '' }}" href="?theme=system">{{ t.theme_system }}</a>
           </nav>
+          <a class="admin-link" href="history">{{ t.history_link }}</a>
           <a class="admin-link" href="admin">{{ t.admin_link }}</a>
           <form method="post" action="logout">
             <button class="logout-btn" type="submit">{{ t.logout }}</button>
@@ -234,7 +235,10 @@
       <section class="panel aggregate-panel">
         <div class="panel-head">
           <h2>{{ t.energy_aggregates }}</h2>
-          <span id="aggregateTotal">--</span>
+          <div class="panel-actions">
+            <span id="aggregateTotal">--</span>
+            <a class="panel-link" href="history">{{ t.explore_history }}</a>
+          </div>
         </div>
         <div class="chart-wrap aggregate-chart-wrap">
           <canvas id="aggregateChart"></canvas>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="{{ lang }}" class="theme-{{ theme }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="icon" href="{{ asset_base_path }}/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css?v={{ asset_version }}">
+    <script src="{{ asset_base_path }}/static/js/chart.umd.min.js?v={{ asset_version }}"></script>
+  </head>
+  <body data-api-base-path="{{ asset_base_path }}">
+    <main class="shell history-shell">
+      <nav class="utility-strip" aria-label="Site">
+        <div class="brand">
+          <img class="brand-logo" src="{{ asset_base_path }}/static/logo.svg?v={{ asset_version }}" alt="" width="40" height="40">
+          <p class="eyebrow">{{ settings.app_name }}</p>
+        </div>
+        <div class="utility-actions">
+          <nav class="lang-switch" aria-label="Language">
+            {% for code, name in languages.items() %}
+              <a class="{{ 'active' if lang == code else '' }}" href="?lang={{ code }}">{{ name }}</a>
+            {% endfor %}
+          </nav>
+          <nav class="theme-switch" aria-label="{{ t.theme_label }}">
+            <a class="{{ 'active' if theme == 'light' else '' }}" href="?theme=light">{{ t.theme_light }}</a>
+            <a class="{{ 'active' if theme == 'dark' else '' }}" href="?theme=dark">{{ t.theme_dark }}</a>
+            <a class="{{ 'active' if theme == 'system' else '' }}" href="?theme=system">{{ t.theme_system }}</a>
+          </nav>
+          <a class="admin-link" href=".">{{ t.dashboard_link }}</a>
+          <a class="admin-link" href="admin">{{ t.admin_link }}</a>
+          <form method="post" action="logout">
+            <button class="logout-btn" type="submit">{{ t.logout }}</button>
+          </form>
+        </div>
+      </nav>
+
+      <header class="history-hero">
+        <p class="eyebrow">{{ t.history_eyebrow }}</p>
+        <h1>{{ t.history_title }}</h1>
+        <p>{{ t.history_intro }}</p>
+      </header>
+
+      <section class="panel history-controls" aria-labelledby="historyFiltersTitle">
+        <div class="history-controls-head">
+          <h2 id="historyFiltersTitle">{{ t.filters }}</h2>
+          <div class="history-presets" role="group" aria-label="{{ t.history_presets }}">
+            <button type="button" data-history-days="30" data-period="daily">{{ t.history_last_30_days }}</button>
+            <button type="button" data-history-days="90" data-period="daily">{{ t.history_last_90_days }}</button>
+            <button type="button" data-history-days="365" data-period="weekly">{{ t.history_last_year }}</button>
+            <button type="button" data-history-days="1095" data-period="monthly">{{ t.history_last_3_years }}</button>
+            <button type="button" data-history-days="1825" data-period="monthly">{{ t.history_last_5_years }}</button>
+          </div>
+        </div>
+        <form id="historyFilters" class="history-filter-grid">
+          <label>
+            <span>{{ t.history_date_from }}</span>
+            <input id="historyFrom" name="from" type="date" required>
+          </label>
+          <label>
+            <span>{{ t.history_date_to }}</span>
+            <input id="historyTo" name="to" type="date" required>
+          </label>
+          <label>
+            <span>{{ t.history_group_by }}</span>
+            <select id="historyPeriod" name="period">
+              <option value="daily">{{ t.daily }}</option>
+              <option value="weekly">{{ t.weekly }}</option>
+              <option value="monthly">{{ t.monthly }}</option>
+              <option value="yearly">{{ t.yearly }}</option>
+            </select>
+          </label>
+          <label>
+            <span>{{ t.inverter }}</span>
+            <select id="historyInverter" name="inverter_id">
+              <option value="">{{ t.all_inverters }}</option>
+              {% for inverter in inverters %}
+                <option value="{{ inverter.id }}">{{ inverter.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="history-submit" type="submit">{{ t.history_analyze }}</button>
+        </form>
+      </section>
+
+      <div id="historyStatus" class="history-status" role="status" aria-live="polite"></div>
+
+      <section class="history-summary" aria-label="{{ t.history_title }}">
+        <article>
+          <span>{{ t.history_total_produced }}</span>
+          <strong id="historyTotal">--</strong>
+        </article>
+        <article>
+          <span>{{ t.history_average_per_day }}</span>
+          <strong id="historyAverage">--</strong>
+        </article>
+        <article>
+          <span>{{ t.history_best_period }}</span>
+          <strong id="historyBest">--</strong>
+          <small id="historyBestValue"></small>
+        </article>
+        <article>
+          <span>{{ t.history_active_periods }}</span>
+          <strong id="historyActive">--</strong>
+        </article>
+      </section>
+
+      <section class="panel history-chart-panel">
+        <div class="panel-head">
+          <h2>{{ t.history_energy_over_time }}</h2>
+          <button id="historyCsv" class="panel-button" type="button" disabled>{{ t.history_download_csv }}</button>
+        </div>
+        <div class="history-chart-wrap">
+          <canvas id="historyChart"></canvas>
+        </div>
+      </section>
+
+      <section class="history-day-section" id="historyDaySection" aria-labelledby="historyDayTitle">
+        <div class="history-day-head">
+          <div>
+            <p class="eyebrow">{{ t.history_selected_day }}</p>
+            <h2 id="historyDayTitle">{{ t.history_day_title }}</h2>
+            <p>{{ t.history_day_intro }}</p>
+          </div>
+          <div class="history-day-picker">
+            <button id="historyPreviousDay" type="button" aria-label="{{ t.history_previous_day }}" title="{{ t.history_previous_day }}">←</button>
+            <input id="historyDay" type="date" aria-label="{{ t.history_selected_day }}">
+            <button id="historyNextDay" type="button" aria-label="{{ t.history_next_day }}" title="{{ t.history_next_day }}">→</button>
+          </div>
+        </div>
+
+        <div id="historyDayStatus" class="history-status" role="status" aria-live="polite"></div>
+
+        <section class="history-day-summary" aria-label="{{ t.history_day_title }}">
+          <article>
+            <span>{{ t.selected_energy }}</span>
+            <strong id="historyDayEnergy">--</strong>
+          </article>
+          <article>
+            <span>{{ t.peak_power }}</span>
+            <strong id="historyDayPeak">--</strong>
+          </article>
+          <article>
+            <span>{{ t.average_power }}</span>
+            <strong id="historyDayAverage">--</strong>
+          </article>
+          <article>
+            <span>{{ t.samples }}</span>
+            <strong id="historyDaySamples">--</strong>
+          </article>
+        </section>
+
+        <div class="history-day-grid">
+          <section class="panel history-day-panel">
+            <div class="panel-head">
+              <h2>{{ t.history_day_power }}</h2>
+              <span id="historyDayPowerDate">--</span>
+            </div>
+            <div class="history-day-chart-wrap">
+              <canvas id="historyDayPowerChart"></canvas>
+            </div>
+          </section>
+
+          <section class="panel history-day-panel">
+            <div class="component-chart-head history-component-head">
+              <h2>{{ t.history_day_components }}</h2>
+              <div class="component-metric-toggle" role="group" aria-label="{{ t.history_day_components }}">
+                <button class="active" type="button" data-history-component-metric="power_w">{{ t.metric_power }}</button>
+                <button type="button" data-history-component-metric="voltage_v">{{ t.metric_voltage }}</button>
+                <button type="button" data-history-component-metric="current_a">{{ t.metric_current }}</button>
+                <button type="button" data-history-component-metric="energy_today_kwh">{{ t.metric_energy }}</button>
+              </div>
+              <span id="historyComponentUnit">W</span>
+            </div>
+            <div class="history-day-chart-wrap">
+              <canvas id="historyDayComponentChart"></canvas>
+            </div>
+          </section>
+        </div>
+
+        <div id="historyDayInverters" class="history-day-inverters"></div>
+      </section>
+
+      <section class="panel history-table-panel">
+        <div class="panel-head">
+          <h2>{{ t.history_breakdown }}</h2>
+          <span id="historyCoverage">--</span>
+        </div>
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <thead id="historyTableHead"></thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script>window.HOMESOLAR_HISTORY_I18N = {{ history_i18n | tojson }};</script>
+    <script src="{{ asset_base_path }}/static/js/history.js?v={{ asset_version }}"></script>
+  </body>
+</html>

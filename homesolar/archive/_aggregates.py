@@ -76,17 +76,61 @@ def aggregate_energy(
     return {"period": period, "labels": labels, "series": series, "totals": totals}
 
 
+def energy_history(
+    session: Session,
+    period: str,
+    inverter_id: str | None,
+    start_date: date,
+    end_date: date,
+) -> dict:
+    period = period if period in {"daily", "weekly", "monthly", "yearly"} else "daily"
+    labels = _labels_for_date_range(period, start_date, end_date)
+    end_date_exclusive = end_date + timedelta(days=1)
+    series = [
+        {
+            "inverter_id": inverter.id,
+            "name": inverter.name,
+            "data": _produced_energy_by_bucket(
+                session,
+                inverter,
+                period,
+                labels,
+                start_date=start_date,
+                end_date=end_date_exclusive,
+            ),
+        }
+        for inverter in filtered_inverters(session, inverter_id)
+    ]
+    totals = [
+        round(sum(series_item["data"][index] for series_item in series), 3)
+        for index in range(len(labels))
+    ]
+    return {
+        "period": period,
+        "from": start_date.isoformat(),
+        "to": end_date.isoformat(),
+        "labels": labels,
+        "series": series,
+        "totals": totals,
+    }
+
+
 def _produced_energy_by_bucket(
     session: Session,
     inverter: models.Inverter,
     period: str,
     labels: list[str],
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> list[float]:
     if not labels:
         return []
 
-    first_date, end_date = _bucket_date_range(period, labels)
-    start_utc = local_date_window_utc(inverter.timezone, first_date)[0]
+    bucket_start_date, bucket_end_date = _bucket_date_range(period, labels)
+    start_date = start_date or bucket_start_date
+    end_date = end_date or bucket_end_date
+    start_utc = local_date_window_utc(inverter.timezone, start_date)[0]
     end_utc = local_date_window_utc(inverter.timezone, end_date)[0]
     timezone = ZoneInfo(inverter.timezone)
 
@@ -168,3 +212,26 @@ def _next_month(value: date) -> date:
     if value.month == 12:
         return date(value.year + 1, 1, 1)
     return date(value.year, value.month + 1, 1)
+
+
+def _labels_for_date_range(period: str, start_date: date, end_date: date) -> list[str]:
+    if period == "daily":
+        return [
+            (start_date + timedelta(days=offset)).isoformat()
+            for offset in range((end_date - start_date).days + 1)
+        ]
+    if period == "weekly":
+        cursor = start_date - timedelta(days=start_date.weekday())
+        labels = []
+        while cursor <= end_date:
+            labels.append(bucket_key(datetime.combine(cursor, time.min), period))
+            cursor += timedelta(days=7)
+        return labels
+    if period == "monthly":
+        cursor = start_date.replace(day=1)
+        labels = []
+        while cursor <= end_date:
+            labels.append(cursor.strftime("%Y-%m"))
+            cursor = _next_month(cursor)
+        return labels
+    return [str(year) for year in range(start_date.year, end_date.year + 1)]

@@ -36,11 +36,37 @@ def component_chart(
     if inverter is None:
         return None
     start = range_start_utc(range_name, [inverter], datetime.now(UTC))
-    rows = session.scalars(
+    return component_chart_for_window(
+        session,
+        inverter,
+        start,
+        None,
+        metric,
+        metric_catalog,
+        range_name=range_name,
+    )
+
+
+def component_chart_for_window(
+    session: Session,
+    inverter: models.Inverter,
+    start_utc: datetime,
+    end_utc: datetime | None,
+    metric: str,
+    metric_catalog: dict,
+    *,
+    range_name: str,
+    fallback_metric: bool = True,
+) -> dict:
+    stmt = (
         select(models.ComponentReading)
-        .where(models.ComponentReading.inverter_id == inverter_id)
-        .where(models.ComponentReading.observed_at >= start)
-        .order_by(
+        .where(models.ComponentReading.inverter_id == inverter.id)
+        .where(models.ComponentReading.observed_at >= start_utc)
+    )
+    if end_utc is not None:
+        stmt = stmt.where(models.ComponentReading.observed_at < end_utc)
+    rows = session.scalars(
+        stmt.order_by(
             models.ComponentReading.component_type,
             models.ComponentReading.component_name,
             models.ComponentReading.observed_at,
@@ -53,7 +79,7 @@ def component_chart(
         if any(getattr(row, key) is not None for row in rows)
     ]
     available_metric_keys = {item["metric"] for item in available_metrics}
-    if metric not in available_metric_keys:
+    if fallback_metric and metric not in available_metric_keys:
         metric = available_metrics[0]["metric"] if available_metrics else "power_w"
 
     by_component: dict[tuple[str, str], list[models.ComponentReading]] = defaultdict(list)
@@ -64,7 +90,7 @@ def component_chart(
     metric_meta = metric_catalog[metric]
     return {
         "range": range_name,
-        "inverter_id": inverter_id,
+        "inverter_id": inverter.id,
         "metric": metric,
         "label": metric_meta["label"],
         "unit": metric_meta["unit"],
