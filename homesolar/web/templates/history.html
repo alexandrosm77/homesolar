@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ asset_base_path }}/static/css/app.css?v={{ asset_version }}">
     <script src="{{ asset_base_path }}/static/js/chart.umd.min.js?v={{ asset_version }}"></script>
   </head>
-  <body data-api-base-path="{{ asset_base_path }}">
+  <body class="history-body" data-api-base-path="{{ asset_base_path }}">
     <main class="shell history-shell">
       <nav class="utility-strip" aria-label="Site">
         <div class="brand">
@@ -35,9 +35,18 @@
       </nav>
 
       <header class="history-hero">
-        <p class="eyebrow">{{ t.history_eyebrow }}</p>
-        <h1>{{ t.history_title }}</h1>
-        <p>{{ t.history_intro }}</p>
+        <div class="history-hero-copy">
+          <p class="eyebrow">{{ t.history_eyebrow }}</p>
+          <h1>{{ t.history_title }}</h1>
+          <p>{{ t.history_intro }}</p>
+        </div>
+        <div class="history-hero-visual" aria-hidden="true">
+          <span class="history-visual-sun"></span>
+          <span class="history-visual-line"></span>
+          <span class="history-visual-bars">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+        </div>
       </header>
 
       <section class="panel history-controls" aria-labelledby="historyFiltersTitle">
@@ -85,26 +94,26 @@
       <div id="historyStatus" class="history-status" role="status" aria-live="polite"></div>
 
       <section class="history-summary" aria-label="{{ t.history_title }}">
-        <article>
+        <article class="history-metric-card history-metric-total">
           <span>{{ t.history_total_produced }}</span>
           <strong id="historyTotal">--</strong>
         </article>
-        <article>
+        <article class="history-metric-card history-metric-average">
           <span>{{ t.history_average_per_day }}</span>
           <strong id="historyAverage">--</strong>
         </article>
-        <article>
+        <article class="history-metric-card history-metric-best">
           <span>{{ t.history_best_period }}</span>
           <strong id="historyBest">--</strong>
           <small id="historyBestValue"></small>
         </article>
-        <article>
+        <article class="history-metric-card history-metric-active">
           <span>{{ t.history_active_periods }}</span>
           <strong id="historyActive">--</strong>
         </article>
       </section>
 
-      <section class="panel history-chart-panel">
+      <section class="panel history-chart-panel history-primary-panel">
         <div class="panel-head">
           <h2>{{ t.history_energy_over_time }}</h2>
           <button id="historyCsv" class="panel-button" type="button" disabled>{{ t.history_download_csv }}</button>
@@ -131,19 +140,19 @@
         <div id="historyDayStatus" class="history-status" role="status" aria-live="polite"></div>
 
         <section class="history-day-summary" aria-label="{{ t.history_day_title }}">
-          <article>
+          <article class="history-day-metric history-day-energy">
             <span>{{ t.selected_energy }}</span>
             <strong id="historyDayEnergy">--</strong>
           </article>
-          <article>
+          <article class="history-day-metric">
             <span>{{ t.peak_power }}</span>
             <strong id="historyDayPeak">--</strong>
           </article>
-          <article>
+          <article class="history-day-metric">
             <span>{{ t.average_power }}</span>
             <strong id="historyDayAverage">--</strong>
           </article>
-          <article>
+          <article class="history-day-metric">
             <span>{{ t.samples }}</span>
             <strong id="historyDaySamples">--</strong>
           </article>

@@ -18,7 +18,10 @@
   const presets = Array.from(document.querySelectorAll("[data-history-days]"));
   const apiBasePath = document.body.dataset.apiBasePath || "";
   const i18n = window.HOMESOLAR_HISTORY_I18N || {};
-  const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b2e"];
+  const palette = ["#13795b", "#d68c22", "#315f92", "#7b5b9e", "#b7584f", "#45877d"];
+  const pageStyles = getComputedStyle(document.documentElement);
+  const chartText = pageStyles.getPropertyValue("--chart-text").trim() || "#65726b";
+  const chartGrid = pageStyles.getPropertyValue("--chart-grid").trim() || "rgba(23, 33, 28, 0.1)";
   let chart = null;
   let dayPowerChart = null;
   let dayComponentChart = null;
@@ -104,6 +107,20 @@
         button.dataset.historyComponentMetric === componentMetric,
       );
     });
+    syncPresetState();
+  }
+
+  function syncPresetState() {
+    const today = localDateValue(new Date());
+    presets.forEach((button) => {
+      const from = dateDaysBefore(today, Number(button.dataset.historyDays));
+      const isActive =
+        toInput.value === today &&
+        fromInput.value === from &&
+        periodInput.value === button.dataset.period;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
   }
 
   function updateSummary(payload) {
@@ -136,6 +153,7 @@
       borderColor: palette[index % palette.length],
       borderWidth: 1,
       borderRadius: payload.labels.length < 80 ? 3 : 0,
+      borderSkipped: false,
     }));
     if (chart) {
       chart.data.labels = payload.labels;
@@ -153,16 +171,34 @@
         scales: {
           x: {
             stacked: true,
-            ticks: { autoSkip: true, maxTicksLimit: 14, maxRotation: 0 },
+            border: { color: chartGrid },
+            grid: { display: false },
+            ticks: {
+              autoSkip: true,
+              color: chartText,
+              maxTicksLimit: 14,
+              maxRotation: 0,
+            },
           },
           y: {
             stacked: true,
             beginAtZero: true,
-            ticks: { callback: (value) => `${value} kWh` },
+            border: { display: false },
+            grid: { color: chartGrid },
+            ticks: { color: chartText, callback: (value) => `${value} kWh` },
           },
         },
         plugins: {
-          legend: { position: "bottom" },
+          legend: {
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              color: chartText,
+              padding: 18,
+              usePointStyle: true,
+            },
+          },
           tooltip: {
             callbacks: {
               label: (item) => `${item.dataset.label}: ${formatEnergy(item.raw)}`,
@@ -203,6 +239,7 @@
     head.appendChild(headingRow);
     payload.labels.forEach((label, index) => {
       const row = document.createElement("tr");
+      row.dataset.historyDate = label;
       if (payload.period === "daily") {
         const periodCell = document.createElement("td");
         const dayButton = document.createElement("button");
@@ -218,6 +255,13 @@
       payload.series.forEach((series) => appendCell(row, formatEnergy(series.data[index]), "td"));
       appendCell(row, formatEnergy(payload.totals[index]), "td");
       body.appendChild(row);
+    });
+    syncSelectedDayHighlight();
+  }
+
+  function syncSelectedDayHighlight() {
+    document.querySelectorAll("#historyTableBody tr").forEach((row) => {
+      row.classList.toggle("selected", row.dataset.historyDate === dayInput.value);
     });
   }
 
@@ -267,18 +311,32 @@
         scales: {
           x: {
             type: "linear",
+            border: { color: chartGrid },
+            grid: { display: false },
             ticks: {
+              color: chartText,
               maxTicksLimit: 7,
               callback: (value) => formatTime(value),
             },
           },
           y: {
             beginAtZero: true,
-            ticks: { callback: (value) => `${value} ${unit}` },
+            border: { display: false },
+            grid: { color: chartGrid },
+            ticks: { color: chartText, callback: (value) => `${value} ${unit}` },
           },
         },
         plugins: {
-          legend: { position: "bottom" },
+          legend: {
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              color: chartText,
+              padding: 16,
+              usePointStyle: true,
+            },
+          },
           tooltip: {
             callbacks: {
               title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
@@ -418,6 +476,7 @@
 
   function selectDay(value, scrollToDetail) {
     dayInput.value = value;
+    syncSelectedDayHighlight();
     loadDay();
     if (scrollToDetail) {
       document.getElementById("historyDaySection").scrollIntoView({
@@ -442,6 +501,7 @@
       return;
     }
     const params = selectedParams();
+    syncPresetState();
     syncUrl(params);
     setStatus(i18n.loading || "Loading historical energy…", "loading");
     csvButton.disabled = true;
@@ -461,6 +521,7 @@
       if (dayInput.value < payload.from || dayInput.value > payload.to) {
         dayInput.value = payload.to;
       }
+      syncSelectedDayHighlight();
       await loadDay();
     } catch {
       currentPayload = null;
@@ -480,8 +541,14 @@
     event.preventDefault();
     loadHistory();
   });
+  [fromInput, toInput, periodInput].forEach((input) => {
+    input.addEventListener("change", syncPresetState);
+  });
   csvButton.addEventListener("click", downloadCsv);
-  dayInput.addEventListener("change", () => loadDay());
+  dayInput.addEventListener("change", () => {
+    syncSelectedDayHighlight();
+    loadDay();
+  });
   previousDayButton.addEventListener("click", () => moveSelectedDay(-1));
   nextDayButton.addEventListener("click", () => moveSelectedDay(1));
   componentMetricButtons.forEach((button) => {
