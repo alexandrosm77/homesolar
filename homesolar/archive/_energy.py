@@ -68,15 +68,9 @@ def produced_energy_for_window(
     use_reported_daily_counter: bool = True,
 ) -> float | None:
     if use_reported_daily_counter:
-        counter = session.scalar(
-            select(func.max(models.Reading.energy_today_kwh))
-            .where(models.Reading.inverter_id == inverter_id)
-            .where(models.Reading.observed_at >= start_utc)
-            .where(models.Reading.observed_at < end_utc)
-            .where(models.Reading.energy_today_kwh.is_not(None))
-        )
+        counter = latest_reported_daily_counter(session, inverter_id, start_utc, end_utc)
         if counter is not None:
-            return round(float(counter), 3)
+            return counter
     total = session.scalar(
         select(func.sum(models.EnergyInterval.generated_kwh))
         .where(models.EnergyInterval.inverter_id == inverter_id)

@@ -163,6 +163,27 @@ def test_archive_aggregates_use_latest_counter_for_current_local_day() -> None:
         assert aggregate["totals"] == [22.25]
 
 
+def test_archive_recalculates_historical_energy_from_each_days_final_counter() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+    yesterday = now - timedelta(days=1)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        _add_reading(session, "one", yesterday - timedelta(hours=11), today=61.3)
+        _add_reading(session, "one", yesterday - timedelta(hours=10), today=0.0)
+        _add_reading(session, "one", yesterday - timedelta(minutes=10), today=20.84)
+        _add_reading(session, "one", yesterday, today=22.25)
+        session.commit()
+
+    daily = archive.aggregate_energy("daily", "one", limit=2, now=now)
+    monthly = archive.aggregate_energy("monthly", "one", limit=1, now=now)
+
+    assert daily["series"][0]["data"] == [22.25, 0.0]
+    assert monthly["series"][0]["data"] == [22.25]
+    assert archive.daily_history("one", days=1, now=now) == [("2026-06-25", 22.25)]
+
+
 def test_archive_longer_aggregates_ignore_non_normal_intervals() -> None:
     archive, session_factory = _archive()
     now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)

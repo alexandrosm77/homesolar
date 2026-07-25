@@ -65,7 +65,7 @@ def aggregate_energy(
         {
             "inverter_id": inverter.id,
             "name": inverter.name,
-            "data": _produced_energy_by_bucket(session, inverter, period, labels, now),
+            "data": _produced_energy_by_bucket(session, inverter, period, labels),
         }
         for inverter in inverters
     ]
@@ -81,7 +81,6 @@ def _produced_energy_by_bucket(
     inverter: models.Inverter,
     period: str,
     labels: list[str],
-    now: datetime,
 ) -> list[float]:
     if not labels:
         return []
@@ -90,10 +89,9 @@ def _produced_energy_by_bucket(
     start_utc = local_date_window_utc(inverter.timezone, first_date)[0]
     end_utc = local_date_window_utc(inverter.timezone, end_date)[0]
     timezone = ZoneInfo(inverter.timezone)
-    current_local_date = now.astimezone(timezone).date()
 
     daily_counters: dict[date, float] = {}
-    current_counter_observed_at: datetime | None = None
+    daily_counter_observed_at: dict[date, datetime] = {}
     if uses_reported_daily_counter(inverter):
         readings = session.execute(
             select(models.Reading)
@@ -111,15 +109,10 @@ def _produced_energy_by_bucket(
             observed_at = as_utc(observed_at_value)
             local_date = observed_at.astimezone(timezone).date()
             counter = float(counter_value)
-            if local_date == current_local_date:
-                if (
-                    current_counter_observed_at is None
-                    or observed_at > current_counter_observed_at
-                ):
-                    daily_counters[local_date] = counter
-                    current_counter_observed_at = observed_at
-                continue
-            daily_counters[local_date] = max(daily_counters.get(local_date, counter), counter)
+            previous_observed_at = daily_counter_observed_at.get(local_date)
+            if previous_observed_at is None or observed_at > previous_observed_at:
+                daily_counters[local_date] = counter
+                daily_counter_observed_at[local_date] = observed_at
 
     daily_intervals: dict[date, float] = defaultdict(float)
     intervals = session.execute(
