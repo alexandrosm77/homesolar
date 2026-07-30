@@ -203,6 +203,31 @@
     return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  function formatDate(value) {
+    return new Date(value).toLocaleDateString([], { day: "2-digit", month: "short" });
+  }
+
+  function formatMonth(value) {
+    return new Date(value).toLocaleDateString([], { month: "short", year: "numeric" });
+  }
+
+  function formatAxisTick(value) {
+    if (selectedRange === "today" || selectedRange === "24h") {
+      return formatTime(value);
+    }
+    if (selectedRange === "365d") {
+      return formatMonth(value);
+    }
+    return formatDate(value);
+  }
+
+  function formatTooltipTitle(value) {
+    if (selectedRange === "today" || selectedRange === "24h") {
+      return formatTime(value);
+    }
+    return `${formatDate(value)} ${formatTime(value)}`;
+  }
+
   function apiUrl(path, params) {
     return `${apiBasePath}${path}?${params}`;
   }
@@ -269,7 +294,7 @@
             grid: { display: false },
             ticks: {
               maxTicksLimit: 6,
-              callback: (value) => formatTime(value),
+              callback: (value) => formatAxisTick(value),
             },
           },
           y: {
@@ -290,7 +315,7 @@
           },
           tooltip: {
             callbacks: {
-              title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
+              title: (items) => (items.length ? formatTooltipTitle(items[0].parsed.x) : ""),
             },
           },
         },
@@ -361,7 +386,7 @@
             grid: { display: false },
             ticks: {
               maxTicksLimit: 5,
-              callback: (value) => formatTime(value),
+              callback: (value) => formatAxisTick(value),
             },
           },
           y: {
@@ -382,7 +407,7 @@
           },
           tooltip: {
             callbacks: {
-              title: (items) => (items.length ? formatTime(items[0].parsed.x) : ""),
+              title: (items) => (items.length ? formatTooltipTitle(items[0].parsed.x) : ""),
             },
           },
         },
