@@ -20,6 +20,7 @@ class Inverter(Base):
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
     timezone: Mapped[str] = mapped_column(String(80), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    live_poll_seconds: Mapped[int | None] = mapped_column(Integer)
     first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

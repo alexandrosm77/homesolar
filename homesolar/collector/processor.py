@@ -30,6 +30,7 @@ def ensure_inverter(session: Session, config: InverterConfig) -> models.Inverter
             base_url=config.base_url,
             timezone=config.timezone,
             enabled=config.enabled,
+            live_poll_seconds=config.polling.live_seconds,
         )
         session.add(inverter)
     else:
@@ -38,6 +39,7 @@ def ensure_inverter(session: Session, config: InverterConfig) -> models.Inverter
         inverter.base_url = config.base_url
         inverter.timezone = config.timezone
         inverter.enabled = config.enabled
+        inverter.live_poll_seconds = config.polling.live_seconds
     return inverter
 
 

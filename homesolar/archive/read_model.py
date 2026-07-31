@@ -3,6 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+DEFAULT_LIVE_POLL_SECONDS = 60
+STALE_LIVE_POLL_INTERVALS = 10
+STALE_LIVE_POLL_MIN_AGE_SECONDS = 900
+
+
+def stale_after_seconds(live_poll_seconds: int | None) -> int:
+    interval = live_poll_seconds or DEFAULT_LIVE_POLL_SECONDS
+    return max(interval * STALE_LIVE_POLL_INTERVALS, STALE_LIVE_POLL_MIN_AGE_SECONDS)
+
 
 @dataclass(frozen=True, slots=True)
 class InverterIdentity:
@@ -96,6 +105,12 @@ class TelemetryHealth:
     state: str
     age_seconds: int | None
     seen_age_seconds: int | None
+    live_poll_age_seconds: int | None = None
+    stale_after_seconds: int | None = None
+
+    @property
+    def is_stale(self) -> bool:
+        return self.state == "stale"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +122,7 @@ class InverterSnapshot:
     latest_alarm: AlarmSnapshot | None
     components: list[ComponentSnapshot] = field(default_factory=list)
     health: TelemetryHealth | None = None
+    last_live_poll: PollEventSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +135,7 @@ class DashboardSnapshot:
     poll_error_count: int
     updated_at: datetime
     recent_events: list[PollEventSnapshot]
+    stale_count: int = 0
 
     @property
     def total_count(self) -> int:

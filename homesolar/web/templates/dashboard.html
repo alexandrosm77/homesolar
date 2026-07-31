@@ -175,9 +175,13 @@
                 </div>
                 <div>
                   <dt>{{ t.poll }}</dt>
-                  <dd class="{{ 'ok' if last_poll and last_poll.success else 'bad' }}">
-                    {{ t.ok if last_poll and last_poll.success else t.waiting }}
-                  </dd>
+                  {% if item.is_stale %}
+                    <dd class="bad">{{ t.state_stale }} ({{ item.live_poll_age_label }})</dd>
+                  {% else %}
+                    <dd class="{{ 'ok' if last_poll and last_poll.success else 'bad' }}">
+                      {{ t.ok if last_poll and last_poll.success else t.waiting }}
+                    </dd>
+                  {% endif %}
                 </div>
                 <div>
                   <dt>{{ t.alarm }}</dt>

@@ -454,7 +454,17 @@ def create_app(config: AppConfig) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "time": datetime.now(UTC).isoformat()}
+        snapshot = archive.dashboard_snapshot()
+        stale = [
+            item.inverter.id
+            for item in snapshot.inverters
+            if item.health and item.health.is_stale
+        ]
+        return {
+            "status": "degraded" if stale else "ok",
+            "time": datetime.now(UTC).isoformat(),
+            "stale_inverters": stale,
+        }
 
     @app.get("/api/inverters")
     def list_inverters() -> list[dict]:
@@ -993,19 +1003,28 @@ def _archive_dashboard_view(snapshot: DashboardSnapshot, t: dict[str, str]) -> d
                 "age_label": _duration_label(item.health.age_seconds if item.health else None, t),
                 "seen_age_label": _duration_label(item.health.seen_age_seconds if item.health else None, t),
                 "is_online": item.health.is_online if item.health else False,
+                "is_stale": item.health.is_stale if item.health else False,
                 "state_label": _archive_state_label(item.health, t),
+                "last_live_poll": (
+                    _archive_poll_event_dict(item.last_live_poll) if item.last_live_poll else None
+                ),
+                "live_poll_age_label": _duration_label(
+                    item.health.live_poll_age_seconds if item.health else None, t
+                ),
             }
             for item in snapshot.inverters
         ],
         "online_count": snapshot.online_count,
         "alarm_count": snapshot.alarm_count,
         "poll_error_count": snapshot.poll_error_count,
+        "stale_count": snapshot.stale_count,
         "health": _build_health(
             snapshot.online_count,
             snapshot.total_count,
             snapshot.alarm_count,
             snapshot.poll_error_count,
             t,
+            snapshot.stale_count,
         ),
         "updated_at": snapshot.updated_at,
         "recent_events": [_archive_poll_event_dict(event) for event in snapshot.recent_events],
@@ -1036,6 +1055,7 @@ def _archive_overview_data(
             snapshot.alarm_count,
             snapshot.poll_error_count,
             t,
+            snapshot.stale_count,
         ),
     }
 
@@ -1074,6 +1094,8 @@ def _archive_state_label(health: TelemetryHealth | None, t: dict[str, str]) -> t
         return (t["state_alarm"], "bad")
     if state == "poll_error":
         return (t["state_poll_error"], "bad")
+    if state == "stale":
+        return (t["state_stale"], "bad")
     if state == "online":
         return (t["state_online"], "ok")
     return (t["state_waiting"], "warn")
@@ -1093,8 +1115,12 @@ def _archive_inverter_response(item: InverterSnapshot) -> dict:
         {
             "latest": _archive_reading_dict(item.latest) if item.latest else None,
             "last_poll": _archive_poll_event_dict(item.last_poll) if item.last_poll else None,
+            "last_live_poll": (
+                _archive_poll_event_dict(item.last_live_poll) if item.last_live_poll else None
+            ),
             "latest_alarm": _archive_alarm_dict(item.latest_alarm) if item.latest_alarm else None,
             "today_kwh": item.produced_energy_today_kwh,
+            "state": item.health.state if item.health else "waiting",
         }
     )
     return response
@@ -1181,13 +1207,20 @@ def _archive_poll_event_dict(event: PollEventSnapshot) -> dict:
 
 
 def _build_health(
-    online_count: int, total_count: int, alarm_count: int, poll_error_count: int, t: dict[str, str]
+    online_count: int,
+    total_count: int,
+    alarm_count: int,
+    poll_error_count: int,
+    t: dict[str, str],
+    stale_count: int = 0,
 ) -> dict:
     problems = []
     if alarm_count:
         problems.append(t["status_alarms"].format(n=alarm_count))
     if poll_error_count:
         problems.append(t["status_poll_errors"].format(n=poll_error_count))
+    if stale_count:
+        problems.append(t["status_stale"].format(n=stale_count))
     ok = not problems
     return {
         "ok": ok,
@@ -1196,6 +1229,7 @@ def _build_health(
         "total_count": total_count,
         "alarm_count": alarm_count,
         "poll_error_count": poll_error_count,
+        "stale_count": stale_count,
     }
 
 

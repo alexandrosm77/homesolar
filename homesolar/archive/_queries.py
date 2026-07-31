@@ -33,10 +33,17 @@ def latest_readings(session: Session, inverter_ids: list[str]) -> dict[str, Read
     return {row.inverter_id: reading_snapshot(row) for row in rows}
 
 
-def latest_poll_events(session: Session, inverter_ids: list[str]) -> dict[str, PollEventSnapshot]:
+def latest_poll_events(
+    session: Session, inverter_ids: list[str], kind: str | None = None
+) -> dict[str, PollEventSnapshot]:
     if not inverter_ids:
         return {}
-    ranked = _ranked_ids(models.PollEvent, models.PollEvent.started_at, inverter_ids)
+    ranked = _ranked_ids(
+        models.PollEvent,
+        models.PollEvent.started_at,
+        inverter_ids,
+        None if kind is None else models.PollEvent.kind == kind,
+    )
     rows = session.scalars(
         select(models.PollEvent).join(ranked, models.PollEvent.id == ranked.c.id).where(ranked.c.rank == 1)
     ).all()
@@ -144,9 +151,12 @@ def alarm_snapshot(alarm: models.AlarmSnapshot) -> AlarmSnapshot:
     return AlarmSnapshot(observed_at=alarm.observed_at, status=alarm.status, alarms=alarm.alarms)
 
 
-def _ranked_ids(model, observed_column, inverter_ids: list[str]):
+def _ranked_ids(model, observed_column, inverter_ids: list[str], extra_filter=None):
     rank = func.row_number().over(
         partition_by=model.inverter_id,
         order_by=[observed_column.desc(), model.id.desc()],
     )
-    return select(model.id.label("id"), rank.label("rank")).where(model.inverter_id.in_(inverter_ids)).subquery()
+    stmt = select(model.id.label("id"), rank.label("rank")).where(model.inverter_id.in_(inverter_ids))
+    if extra_filter is not None:
+        stmt = stmt.where(extra_filter)
+    return stmt.subquery()

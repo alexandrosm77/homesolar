@@ -319,6 +319,56 @@ def test_archive_dashboard_snapshot_returns_health_components_and_recent_events(
     assert snapshot.recent_events[0].inverter_id == "two"
 
 
+def test_archive_flags_inverter_as_stale_when_live_polls_stopped() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(
+            session,
+            "one",
+            name="One",
+            last_seen_at=now - timedelta(hours=6),
+            live_poll_seconds=60,
+        )
+        _add_reading(session, "one", now - timedelta(hours=6), power=0, today=1.0)
+        session.add(_poll("one", now - timedelta(hours=6), success=True))
+        session.add(_poll("one", now - timedelta(minutes=2), success=True, kind="alarm"))
+        session.commit()
+
+    snapshot = archive.dashboard_snapshot(now)
+    health = snapshot.inverters[0].health
+
+    assert health.state == "stale"
+    assert health.is_stale
+    assert health.stale_after_seconds == 900
+    assert health.live_poll_age_seconds == 6 * 3600
+    assert snapshot.stale_count == 1
+    assert snapshot.poll_error_count == 0
+
+
+def test_archive_keeps_dark_inverter_with_live_polls_running_as_waiting() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(
+            session,
+            "one",
+            name="One",
+            last_seen_at=now - timedelta(hours=6),
+            live_poll_seconds=60,
+        )
+        _add_reading(session, "one", now - timedelta(hours=6), power=0, today=1.0)
+        session.add(_poll("one", now - timedelta(minutes=1), success=True))
+        session.commit()
+
+    snapshot = archive.dashboard_snapshot(now)
+
+    assert snapshot.inverters[0].health.state == "waiting"
+    assert snapshot.stale_count == 0
+
+
 def test_archive_uses_trailing_14_local_days_for_median() -> None:
     archive, session_factory = _archive()
     now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
@@ -370,6 +420,7 @@ def _add_inverter(
     name: str | None = None,
     last_seen_at=None,
     type_: str = "kostal_html",
+    live_poll_seconds: int | None = None,
 ) -> None:
     session.add(
         models.Inverter(
@@ -379,6 +430,7 @@ def _add_inverter(
             base_url="http://example.test",
             timezone="Europe/London",
             enabled=True,
+            live_poll_seconds=live_poll_seconds,
             last_seen_at=last_seen_at,
         )
     )
@@ -425,11 +477,15 @@ def _interval(
 
 
 def _poll(
-    inverter_id: str, observed_at: datetime, success: bool, error: str | None = None
+    inverter_id: str,
+    observed_at: datetime,
+    success: bool,
+    error: str | None = None,
+    kind: str = "live",
 ) -> models.PollEvent:
     return models.PollEvent(
         inverter_id=inverter_id,
-        kind="live",
+        kind=kind,
         started_at=observed_at,
         finished_at=observed_at + timedelta(milliseconds=100),
         duration_ms=100,

@@ -56,6 +56,61 @@ def test_health_endpoint_with_collector_disabled(tmp_path) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["stale_inverters"] == []
+
+
+def test_health_endpoint_reports_degraded_when_live_polls_stopped(tmp_path) -> None:
+    config = AppConfig(
+        database=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.sqlite'}"),
+        collector=CollectorConfig(enabled=False),
+        inverters=[
+            InverterConfig(
+                id="apsystems",
+                name="APsystems",
+                type="apsystems_ez1d",
+                base_url="http://example.test",
+            )
+        ],
+    )
+    app = create_app(config)
+
+    from datetime import UTC, datetime, timedelta
+
+    from fastapi.testclient import TestClient
+
+    now = datetime.now(UTC)
+    with TestClient(app) as client:
+        session_factory = app.state.session_factory
+        with session_factory() as session:
+            inverter = session.get(models.Inverter, "apsystems")
+            inverter.live_poll_seconds = 60
+            session.add(
+                models.PollEvent(
+                    inverter_id="apsystems",
+                    kind="live",
+                    started_at=now - timedelta(hours=27),
+                    finished_at=now - timedelta(hours=27),
+                    duration_ms=100,
+                    success=True,
+                )
+            )
+            session.add(
+                models.PollEvent(
+                    inverter_id="apsystems",
+                    kind="alarm",
+                    started_at=now - timedelta(minutes=5),
+                    finished_at=now - timedelta(minutes=5),
+                    duration_ms=100,
+                    success=True,
+                )
+            )
+            session.commit()
+
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["stale_inverters"] == ["apsystems"]
 
 
 def test_dashboard_renders_with_collector_disabled(tmp_path) -> None:
@@ -203,8 +258,10 @@ def test_inverter_daily_counter_takes_priority_over_zero_interval(tmp_path) -> N
         "last_seen_at",
         "latest",
         "last_poll",
+        "last_live_poll",
         "latest_alarm",
         "today_kwh",
+        "state",
     }
     assert set(body["latest"]) == {
         "id",
