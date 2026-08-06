@@ -41,7 +41,6 @@ class AppUser(Base):
     language: Mapped[str | None] = mapped_column(String(8))
     email: Mapped[str | None] = mapped_column(String(254))
     reports_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    report_language: Mapped[str | None] = mapped_column(String(8))
     report_inverter_ids: Mapped[list | None] = mapped_column(JSON)
     last_report_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

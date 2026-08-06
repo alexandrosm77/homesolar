@@ -94,13 +94,6 @@
               <input name="reports_enabled" type="checkbox">
               <span>{{ t.reports_label }}</span>
             </label>
-            <label>
-              <span>{{ t.report_language_label }}</span>
-              <select name="report_language">
-                <option value="en">{{ t.language_en }}</option>
-                <option value="el">{{ t.language_el }}</option>
-              </select>
-            </label>
             <fieldset class="check-group">
               <legend>{{ t.report_inverters_label }}</legend>
               {% for inverter in inverters %}
@@ -153,13 +146,6 @@
                 <label class="check-row">
                   <input name="reports_enabled" type="checkbox" {{ "checked" if user.reports_enabled else "" }}>
                   <span>{{ t.reports_label }}</span>
-                </label>
-                <label>
-                  <span>{{ t.report_language_label }}</span>
-                  <select name="report_language">
-                    <option value="en" {{ "selected" if user.report_language == "en" else "" }}>{{ t.language_en }}</option>
-                    <option value="el" {{ "selected" if user.report_language == "el" else "" }}>{{ t.language_el }}</option>
-                  </select>
                 </label>
                 <fieldset class="check-group">
                   <legend>{{ t.report_inverters_label }}</legend>

@@ -955,7 +955,7 @@ def test_admin_persists_report_preferences(tmp_path, monkeypatch) -> None:
                 "enabled": "on",
                 "email": "reporter@example.test",
                 "reports_enabled": "on",
-                "report_language": "el",
+                "language": "el",
                 "report_inverter_ids": ["test", "ghost"],
             },
             headers={"referer": "http://testserver/admin"},
@@ -965,7 +965,7 @@ def test_admin_persists_report_preferences(tmp_path, monkeypatch) -> None:
             user = session.scalar(select(models.AppUser).where(models.AppUser.username == "reporter"))
             assert user.email == "reporter@example.test"
             assert user.reports_enabled is True
-            assert user.report_language == "el"
+            assert user.language == "el"
             assert user.report_inverter_ids == ["test"]
 
 
@@ -1021,7 +1021,7 @@ def test_send_test_report_emails_user(tmp_path, monkeypatch) -> None:
                 "enabled": "on",
                 "email": "solar@example.test",
                 "reports_enabled": "on",
-                "report_language": "en",
+                "language": "el",
                 "report_inverter_ids": ["test"],
             },
             headers={"referer": "http://testserver/admin"},
@@ -1037,7 +1037,7 @@ def test_send_test_report_emails_user(tmp_path, monkeypatch) -> None:
     assert "message=" in response.headers["location"]
     message = captured["message"]
     assert message["To"] == "solar@example.test"
-    assert "Solar report" in message["Subject"]
+    assert "Ηλιακή αναφορά" in message["Subject"]
     assert any(part.get_content_type() == "image/png" for part in message.walk())
 
 

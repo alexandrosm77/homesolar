@@ -314,7 +314,6 @@ def create_app(config: AppConfig) -> FastAPI:
         language: str | None = Form(default=None),
         email: str = Form(default=""),
         reports_enabled: str | None = Form(default=None),
-        report_language: str | None = Form(default=None),
         report_inverter_ids: list[str] = Form(default=[]),
     ) -> Response:
         t = get_translations(resolve_language(request))
@@ -340,7 +339,6 @@ def create_app(config: AppConfig) -> FastAPI:
                     language=_clean_user_language(language),
                     email=_clean_email(email),
                     reports_enabled=reports_enabled == "on",
-                    report_language=_clean_user_language(report_language),
                     report_inverter_ids=_clean_report_inverter_ids(session, report_inverter_ids),
                     created_at=now,
                     updated_at=now,
@@ -358,7 +356,6 @@ def create_app(config: AppConfig) -> FastAPI:
         language: str | None = Form(default=None),
         email: str = Form(default=""),
         reports_enabled: str | None = Form(default=None),
-        report_language: str | None = Form(default=None),
         report_inverter_ids: list[str] = Form(default=[]),
     ) -> Response:
         t = get_translations(resolve_language(request))
@@ -374,7 +371,6 @@ def create_app(config: AppConfig) -> FastAPI:
             user.language = _clean_user_language(language)
             user.email = _clean_email(email)
             user.reports_enabled = reports_enabled == "on"
-            user.report_language = _clean_user_language(report_language)
             user.report_inverter_ids = _clean_report_inverter_ids(session, report_inverter_ids)
             user.updated_at = datetime.now(UTC)
             if not _has_enabled_admin(session):

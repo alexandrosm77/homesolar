@@ -25,9 +25,8 @@ HISTORY_DAYS = 14
 
 
 def resolve_report_language(user: models.AppUser) -> str:
-    for candidate in (user.report_language, user.language):
-        if candidate in SUPPORTED_LANGUAGES:
-            return candidate
+    if user.language in SUPPORTED_LANGUAGES:
+        return user.language
     return DEFAULT_LANGUAGE
 
 
