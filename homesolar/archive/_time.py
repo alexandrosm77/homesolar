@@ -37,6 +37,10 @@ def range_start_utc(
     return now - ranges.get(range_name, timedelta(days=1))
 
 
+def range_local_day_count(range_name: str) -> int:
+    return {"today": 1, "24h": 1, "7d": 7, "30d": 30, "365d": 365}.get(range_name, 1)
+
+
 def aggregate_start(period: str, now: datetime, limit: int) -> datetime:
     if period == "daily":
         return now - timedelta(days=limit)

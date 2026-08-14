@@ -407,6 +407,48 @@ def test_archive_today_power_chart_returns_local_day_power_series() -> None:
     assert [point.power_w for point in chart.series[0].points] == [1000, 1500]
 
 
+def test_archive_summary_for_range_counts_counter_only_days() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        for offset in range(1, 7):
+            _add_reading(session, "one", now - timedelta(days=offset), power=None, today=10.0)
+        _add_reading(session, "one", now, power=1000, today=2.5)
+        session.commit()
+
+    summary = archive.summary_for_range("7d", "one", now=now)
+
+    assert summary["total_kwh"] == 62.5
+
+
+def test_archive_summary_for_range_prefers_counter_over_intervals_per_day() -> None:
+    archive, session_factory = _archive()
+    now = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+
+    with session_factory() as session:
+        _add_inverter(session, "one")
+        _add_inverter(session, "two", type_="apsystems_ez1d")
+        yesterday = now - timedelta(days=1)
+        first = _add_reading(session, "one", yesterday - timedelta(hours=1), today=1.0)
+        second = _add_reading(session, "one", yesterday, today=4.0)
+        third = _add_reading(session, "two", yesterday - timedelta(hours=1), today=1.0)
+        fourth = _add_reading(session, "two", yesterday, today=99.0)
+        session.flush()
+        session.add_all(
+            [
+                _interval("one", first, second, 0.5, "normal"),
+                _interval("two", third, fourth, 3.0, "normal"),
+            ]
+        )
+        session.commit()
+
+    summary = archive.summary_for_range("7d", now=now)
+
+    assert summary["total_kwh"] == 7.0
+
+
 def _archive():
     engine = engine_from_url("sqlite:///:memory:")
     create_schema(engine)

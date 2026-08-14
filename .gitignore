@@ -11,3 +11,5 @@ __pycache__/
 data/
 config/local.yaml
 .scratch/
+scripts/import_old_system_export.py
+old_system_export.csv

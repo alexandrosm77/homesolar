@@ -74,9 +74,14 @@ class Archive:
         with self._session_factory() as session:
             return _charts.component_chart(session, inverter_id, range_name, metric, metric_catalog)
 
-    def summary_for_range(self, range_name: str, inverter_id: str | None = None) -> dict:
+    def summary_for_range(
+        self,
+        range_name: str,
+        inverter_id: str | None = None,
+        now: datetime | None = None,
+    ) -> dict:
         with self._session_factory() as session:
-            return _aggregates.summary_for_range(session, range_name, inverter_id)
+            return _aggregates.summary_for_range(session, range_name, inverter_id, now)
 
     def aggregate_energy(
         self,

@@ -7,36 +7,46 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from homesolar.archive._energy import produced_energy_today, uses_reported_daily_counter
+from homesolar.archive._energy import uses_reported_daily_counter
 from homesolar.archive._queries import filtered_inverters
 from homesolar.archive._time import (
     as_utc,
     bucket_key,
     bucket_labels,
     local_date_window_utc,
+    range_local_day_count,
     range_start_utc,
 )
 from homesolar.db import models
 
 
-def summary_for_range(session: Session, range_name: str, inverter_id: str | None) -> dict:
+def summary_for_range(
+    session: Session,
+    range_name: str,
+    inverter_id: str | None,
+    now: datetime | None = None,
+) -> dict:
     inverters = filtered_inverters(session, inverter_id)
-    now = datetime.now(UTC)
-    start = range_start_utc(range_name, inverters, now)
+    now = as_utc(now or datetime.now(UTC))
+    days = range_local_day_count(range_name)
+    day_labels = {inverter.id: _local_day_labels(inverter, now, days) for inverter in inverters}
+    start = min(
+        (
+            local_date_window_utc(inverter.timezone, date.fromisoformat(day_labels[inverter.id][0]))[0]
+            for inverter in inverters
+        ),
+        default=range_start_utc(range_name, inverters, now),
+    )
+
     reading_stmt = select(models.Reading).where(models.Reading.observed_at >= start)
-    interval_stmt = select(models.EnergyInterval).where(models.EnergyInterval.end_at >= start)
     if inverter_id:
         reading_stmt = reading_stmt.where(models.Reading.inverter_id == inverter_id)
-        interval_stmt = interval_stmt.where(models.EnergyInterval.inverter_id == inverter_id)
-
     readings = session.scalars(reading_stmt).all()
-    if range_name == "today":
-        total_kwh = sum(produced_energy_today(session, inverter, now) or 0 for inverter in inverters)
-    else:
-        intervals = session.scalars(
-            interval_stmt.where(models.EnergyInterval.confidence == "normal")
-        ).all()
-        total_kwh = sum(interval.generated_kwh or 0 for interval in intervals)
+
+    total_kwh = sum(
+        sum(_produced_energy_by_bucket(session, inverter, "daily", day_labels[inverter.id]))
+        for inverter in inverters
+    )
 
     power_values = [row.current_power_w for row in readings if row.current_power_w is not None]
     avg_power = sum(power_values) / len(power_values) if power_values else None
@@ -48,6 +58,11 @@ def summary_for_range(session: Session, range_name: str, inverter_id: str | None
         "average_power_w": round(avg_power, 1) if avg_power is not None else None,
         "reading_count": len(readings),
     }
+
+
+def _local_day_labels(inverter: models.Inverter, now: datetime, days: int) -> list[str]:
+    local_today = now.astimezone(ZoneInfo(inverter.timezone)).date()
+    return [(local_today - timedelta(days=offset)).isoformat() for offset in reversed(range(days))]
 
 
 def aggregate_energy(
