@@ -5,8 +5,10 @@
   const periodInput = document.getElementById("historyPeriod");
   const inverterInput = document.getElementById("historyInverter");
   const chartEl = document.getElementById("historyChart");
+  const chartWrapEl = chartEl ? chartEl.closest(".history-chart-wrap") : null;
   const statusEl = document.getElementById("historyStatus");
   const csvButton = document.getElementById("historyCsv");
+  const zoomOutButton = document.getElementById("historyZoomOut");
   const dayInput = document.getElementById("historyDay");
   const previousDayButton = document.getElementById("historyPreviousDay");
   const nextDayButton = document.getElementById("historyNextDay");
@@ -26,6 +28,8 @@
   let dayPowerChart = null;
   let dayComponentChart = null;
   let currentPayload = null;
+  let zoomStack = [];
+  let suppressChartClick = false;
 
   function localDateValue(date) {
     const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -40,6 +44,96 @@
 
   function formatEnergy(value) {
     return `${Number(value || 0).toFixed(2)} kWh`;
+  }
+
+  function bucketRange(label, period) {
+    if (period === "weekly") {
+      const [year, week] = label.split("-W").map(Number);
+      const january4 = new Date(Date.UTC(year, 0, 4));
+      const monday = new Date(january4);
+      monday.setUTCDate(january4.getUTCDate() - ((january4.getUTCDay() + 6) % 7) + (week - 1) * 7);
+      const sunday = new Date(monday);
+      sunday.setUTCDate(monday.getUTCDate() + 6);
+      return { from: monday.toISOString().slice(0, 10), to: sunday.toISOString().slice(0, 10) };
+    }
+    if (period === "monthly") {
+      const [year, month] = label.split("-").map(Number);
+      const lastDay = new Date(Date.UTC(year, month, 0));
+      return { from: `${label}-01`, to: lastDay.toISOString().slice(0, 10) };
+    }
+    if (period === "yearly") {
+      return { from: `${label}-01-01`, to: `${label}-12-31` };
+    }
+    return { from: label, to: label };
+  }
+
+  function granularityForRange(fromValue, toValue) {
+    const days =
+      Math.round(
+        (new Date(`${toValue}T12:00:00`) - new Date(`${fromValue}T12:00:00`)) / 86_400_000,
+      ) + 1;
+    if (days <= 120) {
+      return "daily";
+    }
+    if (days <= 750) {
+      return "weekly";
+    }
+    if (days <= 2200) {
+      return "monthly";
+    }
+    return "yearly";
+  }
+
+  function syncZoomOutState() {
+    if (zoomOutButton) {
+      zoomOutButton.disabled = zoomStack.length === 0;
+    }
+  }
+
+  function clearZoomStack() {
+    zoomStack = [];
+    syncZoomOutState();
+  }
+
+  function zoomTo(fromValue, toValue, period) {
+    const today = localDateValue(new Date());
+    const nextTo = toValue > today ? today : toValue;
+    const nextFrom = fromValue > nextTo ? nextTo : fromValue;
+    if (
+      nextFrom === fromInput.value &&
+      nextTo === toInput.value &&
+      period === periodInput.value
+    ) {
+      return;
+    }
+    zoomStack.push({ from: fromInput.value, to: toInput.value, period: periodInput.value });
+    fromInput.value = nextFrom;
+    toInput.value = nextTo;
+    periodInput.value = period;
+    syncZoomOutState();
+    loadHistory();
+  }
+
+  function zoomOut() {
+    const previous = zoomStack.pop();
+    if (!previous) {
+      return;
+    }
+    fromInput.value = previous.from;
+    toInput.value = previous.to;
+    periodInput.value = previous.period;
+    syncZoomOutState();
+    loadHistory();
+  }
+
+  function drillInto(label, period) {
+    const range = bucketRange(label, period);
+    if (period === "daily") {
+      selectDay(label, true);
+      return;
+    }
+    const nextPeriod = period === "yearly" ? "monthly" : "daily";
+    zoomTo(range.from, range.to, nextPeriod);
   }
 
   function formatPower(value) {
@@ -206,19 +300,88 @@
           },
         },
         onClick: (_event, elements) => {
-          if (currentPayload?.period !== "daily" || !elements.length) {
+          if (suppressChartClick || !currentPayload || !elements.length) {
             return;
           }
-          selectDay(currentPayload.labels[elements[0].index], true);
+          drillInto(currentPayload.labels[elements[0].index], currentPayload.period);
         },
         onHover: (event, elements) => {
           if (event.native?.target) {
-            event.native.target.style.cursor =
-              currentPayload?.period === "daily" && elements.length ? "pointer" : "default";
+            event.native.target.style.cursor = elements.length ? "pointer" : "crosshair";
           }
         },
       },
     });
+    setupDragZoom();
+  }
+
+  function setupDragZoom() {
+    if (!chartWrapEl) {
+      return;
+    }
+    const overlay = document.createElement("div");
+    overlay.className = "history-zoom-selection";
+    overlay.hidden = true;
+    chartWrapEl.appendChild(overlay);
+    let dragStartX = null;
+    let dragging = false;
+
+    function hideOverlay() {
+      overlay.hidden = true;
+      dragStartX = null;
+      dragging = false;
+    }
+
+    chartEl.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !chart || !currentPayload?.labels.length) {
+        return;
+      }
+      dragStartX = event.offsetX;
+      dragging = false;
+    });
+    chartEl.addEventListener("pointermove", (event) => {
+      if (dragStartX == null) {
+        return;
+      }
+      if (!dragging && Math.abs(event.offsetX - dragStartX) < 6) {
+        return;
+      }
+      dragging = true;
+      chartEl.setPointerCapture(event.pointerId);
+      const area = chart.chartArea;
+      const left = Math.max(Math.min(dragStartX, event.offsetX), area.left);
+      const right = Math.min(Math.max(dragStartX, event.offsetX), area.right);
+      overlay.hidden = false;
+      overlay.style.left = `${chartEl.offsetLeft + left}px`;
+      overlay.style.width = `${Math.max(right - left, 0)}px`;
+      overlay.style.top = `${chartEl.offsetTop + area.top}px`;
+      overlay.style.height = `${area.bottom - area.top}px`;
+    });
+    chartEl.addEventListener("pointerup", (event) => {
+      if (dragStartX == null) {
+        return;
+      }
+      const startX = dragStartX;
+      const wasDragging = dragging;
+      hideOverlay();
+      if (!wasDragging) {
+        return;
+      }
+      suppressChartClick = true;
+      setTimeout(() => {
+        suppressChartClick = false;
+      }, 0);
+      const labels = currentPayload.labels;
+      const scale = chart.scales.x;
+      const first = Math.round(scale.getValueForPixel(Math.min(startX, event.offsetX)));
+      const last = Math.round(scale.getValueForPixel(Math.max(startX, event.offsetX)));
+      const startIndex = Math.min(Math.max(first, 0), labels.length - 1);
+      const endIndex = Math.min(Math.max(last, 0), labels.length - 1);
+      const fromValue = bucketRange(labels[startIndex], currentPayload.period).from;
+      const toValue = bucketRange(labels[endIndex], currentPayload.period).to;
+      zoomTo(fromValue, toValue, granularityForRange(fromValue, toValue));
+    });
+    chartEl.addEventListener("pointercancel", hideOverlay);
   }
 
   function appendCell(row, value, tagName) {
@@ -534,17 +697,22 @@
       toInput.value = localDateValue(new Date());
       fromInput.value = dateDaysBefore(toInput.value, Number(button.dataset.historyDays));
       periodInput.value = button.dataset.period || "monthly";
+      clearZoomStack();
       loadHistory();
     });
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    clearZoomStack();
     loadHistory();
   });
   [fromInput, toInput, periodInput].forEach((input) => {
     input.addEventListener("change", syncPresetState);
   });
   csvButton.addEventListener("click", downloadCsv);
+  if (zoomOutButton) {
+    zoomOutButton.addEventListener("click", zoomOut);
+  }
   dayInput.addEventListener("change", () => {
     syncSelectedDayHighlight();
     loadDay();

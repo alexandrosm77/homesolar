@@ -116,7 +116,10 @@
       <section class="panel history-chart-panel history-primary-panel">
         <div class="panel-head">
           <h2>{{ t.history_energy_over_time }}</h2>
-          <button id="historyCsv" class="panel-button" type="button" disabled>{{ t.history_download_csv }}</button>
+          <div class="panel-actions">
+            <button id="historyZoomOut" class="panel-button" type="button" disabled title="{{ t.history_zoom_out_hint }}">{{ t.history_zoom_out }}</button>
+            <button id="historyCsv" class="panel-button" type="button" disabled>{{ t.history_download_csv }}</button>
+          </div>
         </div>
         <div class="history-chart-wrap">
           <canvas id="historyChart"></canvas>
